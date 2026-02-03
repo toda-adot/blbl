@@ -30,6 +30,13 @@ class AppPrefs(context: Context) {
         get() = prefs.getString(KEY_SIDEBAR_SIZE, SIDEBAR_SIZE_MEDIUM) ?: SIDEBAR_SIZE_MEDIUM
         set(value) = prefs.edit().putString(KEY_SIDEBAR_SIZE, value).apply()
 
+    var startupPage: String
+        get() = prefs.getString(KEY_STARTUP_PAGE, STARTUP_PAGE_HOME)?.trim()?.takeIf { it.isNotBlank() } ?: STARTUP_PAGE_HOME
+        set(value) {
+            val v = value.trim().takeIf { it.isNotBlank() } ?: STARTUP_PAGE_HOME
+            prefs.edit().putString(KEY_STARTUP_PAGE, v).apply()
+        }
+
     var userAgent: String
         get() = prefs.getString(KEY_UA, DEFAULT_UA) ?: DEFAULT_UA
         set(value) = prefs.edit().putString(KEY_UA, value).apply()
@@ -253,6 +260,12 @@ class AppPrefs(context: Context) {
         const val UI_MODE_TV = "tv"
         const val UI_MODE_NORMAL = "normal"
 
+        const val STARTUP_PAGE_HOME = "home"
+        const val STARTUP_PAGE_CATEGORY = "category"
+        const val STARTUP_PAGE_DYNAMIC = "dynamic"
+        const val STARTUP_PAGE_LIVE = "live"
+        const val STARTUP_PAGE_MY = "my"
+
         const val SIDEBAR_SIZE_SMALL = "small"
         const val SIDEBAR_SIZE_MEDIUM = "medium"
         const val SIDEBAR_SIZE_LARGE = "large"
@@ -268,6 +281,7 @@ class AppPrefs(context: Context) {
         private const val KEY_BUVID_ACTIVATED_EPOCH_DAY = "buvid_activated_epoch_day"
         private const val KEY_UI_MODE = "ui_mode"
         private const val KEY_SIDEBAR_SIZE = "sidebar_size"
+        private const val KEY_STARTUP_PAGE = "startup_page"
         private const val KEY_IMAGE_QUALITY = "image_quality"
         private const val KEY_DANMAKU_ENABLED = "danmaku_enabled"
         private const val KEY_DANMAKU_ALLOW_TOP = "danmaku_allow_top"

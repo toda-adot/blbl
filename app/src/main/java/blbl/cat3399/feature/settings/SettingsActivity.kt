@@ -257,6 +257,7 @@ class SettingsActivity : BaseActivity() {
             )
 
             "页面设置" -> listOf(
+                SettingEntry("启动默认页", startupPageText(prefs.startupPage), null),
                 SettingEntry("每行卡片数量", gridSpanText(prefs.gridSpanCount), null),
                 SettingEntry("动态页每行卡片数量", gridSpanText(prefs.dynamicGridSpanCount), null),
                 SettingEntry("番剧/电视剧每行卡片数量", gridSpanText(prefs.pgcGridSpanCount), null),
@@ -361,6 +362,27 @@ class SettingsActivity : BaseActivity() {
                 Immersive.apply(this, prefs.fullscreenEnabled)
                 Toast.makeText(this, "全屏：${if (prefs.fullscreenEnabled) "开" else "关"}", Toast.LENGTH_SHORT).show()
                 refreshSection(entry.title)
+            }
+
+            "启动默认页" -> {
+                val options =
+                    listOf(
+                        blbl.cat3399.core.prefs.AppPrefs.STARTUP_PAGE_HOME to "推荐",
+                        blbl.cat3399.core.prefs.AppPrefs.STARTUP_PAGE_CATEGORY to "分类",
+                        blbl.cat3399.core.prefs.AppPrefs.STARTUP_PAGE_DYNAMIC to "动态",
+                        blbl.cat3399.core.prefs.AppPrefs.STARTUP_PAGE_LIVE to "直播",
+                        blbl.cat3399.core.prefs.AppPrefs.STARTUP_PAGE_MY to "我的",
+                    )
+                showChoiceDialog(
+                    title = "启动默认页",
+                    items = options.map { it.second },
+                    current = startupPageText(prefs.startupPage),
+                ) { selected ->
+                    val key = options.firstOrNull { it.second == selected }?.first ?: blbl.cat3399.core.prefs.AppPrefs.STARTUP_PAGE_HOME
+                    prefs.startupPage = key
+                    Toast.makeText(this, "启动默认页：$selected（下次启动生效）", Toast.LENGTH_SHORT).show()
+                    refreshSection(entry.title)
+                }
             }
 
             "界面大小" -> {
@@ -1324,6 +1346,14 @@ class SettingsActivity : BaseActivity() {
     private fun aiLevelText(level: Int): String = if (level == 0) "默认(3)" else level.coerceIn(1, 10).toString()
 
     private fun gridSpanText(span: Int): String = if (span <= 0) "自动" else span.toString()
+
+    private fun startupPageText(prefValue: String): String = when (prefValue) {
+        blbl.cat3399.core.prefs.AppPrefs.STARTUP_PAGE_CATEGORY -> "分类"
+        blbl.cat3399.core.prefs.AppPrefs.STARTUP_PAGE_DYNAMIC -> "动态"
+        blbl.cat3399.core.prefs.AppPrefs.STARTUP_PAGE_LIVE -> "直播"
+        blbl.cat3399.core.prefs.AppPrefs.STARTUP_PAGE_MY -> "我的"
+        else -> "推荐"
+    }
 
     private fun sidebarSizeText(prefValue: String): String = when (prefValue) {
         blbl.cat3399.core.prefs.AppPrefs.SIDEBAR_SIZE_SMALL -> "小"

@@ -51,6 +51,7 @@ class MainActivity : BaseActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var navAdapter: SidebarNavAdapter
     private var needForceInitialSidebarFocus: Boolean = false
+    private var launchNavId: Int = SidebarNavAdapter.ID_HOME
     private var lastMainFocusedView: WeakReference<View>? = null
     private var pausedFocusedView: WeakReference<View>? = null
     private var pausedFocusWasInMain: Boolean = false
@@ -68,6 +69,7 @@ class MainActivity : BaseActivity() {
         setContentView(binding.root)
         Immersive.apply(this, BiliClient.prefs.fullscreenEnabled)
         applyUiMode()
+        launchNavId = resolveLaunchNavId()
 
         userInfoOverlay = binding.userInfoOverlay
         initUserInfoOverlay()
@@ -108,11 +110,11 @@ class MainActivity : BaseActivity() {
                 SidebarNavAdapter.NavItem(SidebarNavAdapter.ID_LIVE, getString(R.string.tab_live), R.drawable.ic_nav_live),
                 SidebarNavAdapter.NavItem(SidebarNavAdapter.ID_MY, getString(R.string.tab_my), R.drawable.ic_nav_my),
             ),
-            selectedId = SidebarNavAdapter.ID_HOME,
+            selectedId = launchNavId,
         )
 
         if (savedInstanceState == null) {
-            navAdapter.select(SidebarNavAdapter.ID_HOME, trigger = true)
+            navAdapter.select(launchNavId, trigger = true)
         }
 
         focusListener =
@@ -137,8 +139,8 @@ class MainActivity : BaseActivity() {
                     val handled = (current as? BackPressHandler)?.handleBackPressed() == true
                     AppLog.d("Back", "back current=${current?.javaClass?.simpleName} handled=$handled")
                     if (handled) return
-                    if (current !is HomeFragment) {
-                        navAdapter.select(SidebarNavAdapter.ID_HOME, trigger = true)
+                    if (!isAtLaunchRoot(current)) {
+                        navAdapter.select(launchNavId, trigger = true)
                         return
                     }
                     if (shouldFinishOnBackPress()) finish()
@@ -148,6 +150,27 @@ class MainActivity : BaseActivity() {
 
         refreshSidebarUser()
         showFirstLaunchDisclaimerIfNeeded()
+    }
+
+    private fun resolveLaunchNavId(): Int {
+        val prefs = BiliClient.prefs
+        return when (prefs.startupPage) {
+            AppPrefs.STARTUP_PAGE_CATEGORY -> SidebarNavAdapter.ID_CATEGORY
+            AppPrefs.STARTUP_PAGE_DYNAMIC -> SidebarNavAdapter.ID_DYNAMIC
+            AppPrefs.STARTUP_PAGE_LIVE -> SidebarNavAdapter.ID_LIVE
+            AppPrefs.STARTUP_PAGE_MY -> SidebarNavAdapter.ID_MY
+            else -> SidebarNavAdapter.ID_HOME
+        }
+    }
+
+    private fun isAtLaunchRoot(fragment: Fragment?): Boolean {
+        return when (launchNavId) {
+            SidebarNavAdapter.ID_CATEGORY -> fragment is CategoryFragment
+            SidebarNavAdapter.ID_DYNAMIC -> fragment is DynamicFragment
+            SidebarNavAdapter.ID_LIVE -> fragment is LiveFragment
+            SidebarNavAdapter.ID_MY -> fragment is MyFragment
+            else -> fragment is HomeFragment
+        }
     }
 
     override fun onResume() {
