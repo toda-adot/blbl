@@ -35,10 +35,9 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
-import androidx.media3.exoplayer.source.ProgressiveMediaSource
-import androidx.media3.exoplayer.source.SingleSampleMediaSource
 import androidx.media3.ui.CaptionStyleCompat
 import blbl.cat3399.BlblApp
 import blbl.cat3399.R
@@ -1762,7 +1761,7 @@ class PlayerActivity : BaseActivity() {
     override fun finish() {
         requestExitCleanup(reason = "finish")
         super.finish()
-        overridePendingTransition(0, 0)
+        applyCloseTransitionNoAnim()
     }
 
     override fun onDestroy() {
@@ -3683,28 +3682,27 @@ class PlayerActivity : BaseActivity() {
         subtitle: MediaItem.SubtitleConfiguration?,
     ): MediaSource {
         val subs = listOfNotNull(subtitle)
-        val videoSource = ProgressiveMediaSource.Factory(videoFactory).createMediaSource(
-            MediaItem.Builder().setUri(Uri.parse(videoUrl)).setSubtitleConfigurations(subs).build(),
-        )
-        val audioSource = ProgressiveMediaSource.Factory(audioFactory).createMediaSource(
-            MediaItem.Builder().setUri(Uri.parse(audioUrl)).build(),
-        )
-        val subtitleSource = subtitle?.let { buildSubtitleSource(it) }
-        return if (subtitleSource != null) MergingMediaSource(videoSource, audioSource, subtitleSource) else MergingMediaSource(videoSource, audioSource)
+        val videoSource =
+            DefaultMediaSourceFactory(DefaultDataSource.Factory(this, videoFactory))
+                .createMediaSource(
+                    MediaItem.Builder().setUri(Uri.parse(videoUrl)).setSubtitleConfigurations(subs).build(),
+                )
+        val audioSource =
+            DefaultMediaSourceFactory(DefaultDataSource.Factory(this, audioFactory))
+                .createMediaSource(
+                    MediaItem.Builder().setUri(Uri.parse(audioUrl)).build(),
+                )
+        return MergingMediaSource(videoSource, audioSource)
     }
 
     private fun buildProgressive(factory: DataSource.Factory, url: String, subtitle: MediaItem.SubtitleConfiguration?): MediaSource {
         val subs = listOfNotNull(subtitle)
-        val main = ProgressiveMediaSource.Factory(factory).createMediaSource(
-            MediaItem.Builder().setUri(Uri.parse(url)).setSubtitleConfigurations(subs).build(),
-        )
-        val subtitleSource = subtitle?.let { buildSubtitleSource(it) }
-        return if (subtitleSource != null) MergingMediaSource(main, subtitleSource) else main
-    }
-
-    private fun buildSubtitleSource(subtitle: MediaItem.SubtitleConfiguration): MediaSource {
-        val ds = DefaultDataSource.Factory(this)
-        return SingleSampleMediaSource.Factory(ds).createMediaSource(subtitle, C.TIME_UNSET)
+        val item =
+            MediaItem.Builder()
+                .setUri(Uri.parse(url))
+                .setSubtitleConfigurations(subs)
+                .build()
+        return DefaultMediaSourceFactory(DefaultDataSource.Factory(this, factory)).createMediaSource(item)
     }
 
     internal fun reloadStream(keepPosition: Boolean, resetConstraints: Boolean = true) {

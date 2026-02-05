@@ -220,7 +220,7 @@ class LivePlayerActivity : BaseActivity() {
             binding.playerView.player = null
         }
         super.finish()
-        overridePendingTransition(0, 0)
+        applyCloseTransitionNoAnim()
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
