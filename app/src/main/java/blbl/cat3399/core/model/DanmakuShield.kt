@@ -12,9 +12,10 @@ data class DanmakuShield(
     fun allow(danmaku: Danmaku): Boolean {
         val mode = danmaku.mode
         val typeAllowed = when (mode) {
-            1, 6 -> allowScroll
+            1, 2, 3, 6 -> allowScroll
             4 -> allowBottom
             5 -> allowTop
+            7, 8, 9 -> false
             else -> allowSpecial
         }
         if (!typeAllowed) return false
@@ -33,4 +34,3 @@ data class DanmakuShield(
         return true
     }
 }
-
