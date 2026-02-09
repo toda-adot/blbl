@@ -28,6 +28,9 @@ class LiveMessageClient(
     data class LiveDanmakuEvent(
         val text: String,
         val color: Int,
+        val eventTimeMs: Long,
+        val sendTimeMs: Long?,
+        val rndTimeMs: Long?,
     )
 
     data class LiveSuperChatEvent(
@@ -289,7 +292,26 @@ class LiveMessageClient(
                     val extra = info.optJSONArray(0) ?: return@runCatching 0xFFFFFF
                     extra.optInt(3, 0xFFFFFF)
                 }.getOrDefault(0xFFFFFF)
-            onDanmaku(LiveDanmakuEvent(text = msg, color = color))
+            val rndTimeMs =
+                runCatching {
+                    val extra = info.optJSONArray(0) ?: return@runCatching null
+                    extra.optLong(4, 0L).takeIf { it > 0L }
+                }.getOrNull()
+            val sendTimeMs = obj.optLong("send_time", 0L).takeIf { it > 0L }
+            val eventTimeMs = rndTimeMs ?: sendTimeMs ?: System.currentTimeMillis()
+            AppLog.i(
+                "LiveDanmaku",
+                "ws room=$roomId event=$eventTimeMs send=$sendTimeMs rnd=$rndTimeMs color=$color textLen=${msg.length}",
+            )
+            onDanmaku(
+                LiveDanmakuEvent(
+                    text = msg,
+                    color = color,
+                    eventTimeMs = eventTimeMs,
+                    sendTimeMs = sendTimeMs,
+                    rndTimeMs = rndTimeMs,
+                ),
+            )
             return
         }
         if (cmd == "SUPER_CHAT_MESSAGE") {

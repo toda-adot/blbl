@@ -77,6 +77,8 @@ class LivePlayerActivity : BaseActivity() {
     private val chatMax = 200
 
     private var messageClient: LiveMessageClient? = null
+    private var liveDanmakuBaseUptimeMs: Long = 0L
+    private var liveDanmakuLastAppendMs: Int = Int.MIN_VALUE
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -129,7 +131,9 @@ class LivePlayerActivity : BaseActivity() {
         val exo = ExoPlayer.Builder(this).build()
         player = exo
         binding.playerView.player = exo
-        binding.danmakuView.setPositionProvider { exo.currentPosition }
+        liveDanmakuBaseUptimeMs = SystemClock.elapsedRealtime()
+        liveDanmakuLastAppendMs = Int.MIN_VALUE
+        binding.danmakuView.setPositionProvider { liveDanmakuPositionMs() }
         binding.danmakuView.setConfigProvider { session.danmaku.toConfig() }
 
         exo.addListener(
@@ -628,6 +632,7 @@ class LivePlayerActivity : BaseActivity() {
         messageClient?.close()
         messageClient = null
         val rid = realRoomId.takeIf { it > 0 } ?: return
+        AppLog.i("LiveDanmaku", "connect room=$rid")
 
         messageClient =
             LiveMessageClient(
@@ -635,19 +640,7 @@ class LivePlayerActivity : BaseActivity() {
                 onDanmaku = { ev ->
                     runOnUiThread(
                         Runnable {
-                            if (!session.danmaku.enabled) return@Runnable
-                            val exo = player ?: return@Runnable
-                        val d =
-                            Danmaku(
-                                timeMs = exo.currentPosition.toInt(),
-                                mode = 1,
-                                text = ev.text,
-                                color = ev.color,
-                                fontSize = 25,
-                                weight = 0,
-                            )
-                        binding.danmakuView.appendDanmakus(listOf(d), maxItems = 2000)
-                        pushChatItem(LiveChatAdapter.Item(title = "弹幕", body = ev.text))
+                            appendLiveDanmakuEvent(ev)
                         },
                     )
                 },
@@ -673,6 +666,39 @@ class LivePlayerActivity : BaseActivity() {
             runCatching { messageClient?.connect() }
                 .onFailure { AppLog.w("LiveWs", "connect failed", it) }
         }
+    }
+
+    private fun liveDanmakuPositionMs(): Long {
+        val base = liveDanmakuBaseUptimeMs
+        if (base <= 0L) return 0L
+        val posMs = SystemClock.elapsedRealtime() - base
+        return posMs.coerceIn(0L, Int.MAX_VALUE.toLong())
+    }
+
+    private fun liveDanmakuAppendTimeMs(): Int {
+        val nowMs = liveDanmakuPositionMs().toInt()
+        val lastMs = liveDanmakuLastAppendMs
+        val safeMs = if (lastMs == Int.MIN_VALUE) nowMs else nowMs.coerceAtLeast(lastMs)
+        liveDanmakuLastAppendMs = safeMs
+        return safeMs
+    }
+
+    private fun appendLiveDanmakuEvent(ev: LiveMessageClient.LiveDanmakuEvent) {
+        if (!session.danmaku.enabled) return
+        if (player == null) return
+        val timeMs = liveDanmakuAppendTimeMs()
+
+        val d =
+            Danmaku(
+                timeMs = timeMs,
+                mode = 1,
+                text = ev.text,
+                color = ev.color,
+                fontSize = 25,
+                weight = 0,
+            )
+        binding.danmakuView.appendDanmakus(listOf(d), maxItems = 2000, alreadySorted = true)
+        pushChatItem(LiveChatAdapter.Item(title = "弹幕", body = ev.text))
     }
 
     private fun pushChatItem(item: LiveChatAdapter.Item) {
