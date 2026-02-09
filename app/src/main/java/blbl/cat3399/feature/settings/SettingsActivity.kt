@@ -22,6 +22,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import blbl.cat3399.BuildConfig
+import blbl.cat3399.core.log.LogExporter
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.BaseActivity
@@ -53,6 +54,7 @@ class SettingsActivity : BaseActivity() {
     private lateinit var rightAdapter: SettingsEntryAdapter
     private var testUpdateJob: Job? = null
     private var testUpdateCheckJob: Job? = null
+    private var exportLogsJob: Job? = null
     private var testUpdateCheckState: TestUpdateCheckState = TestUpdateCheckState.Idle
     private var testUpdateCheckedAtMs: Long = -1L
     private var clearCacheJob: Job? = null
@@ -89,6 +91,31 @@ class SettingsActivity : BaseActivity() {
             prefs.gaiaVgateVVoucherSavedAtMs = -1L
             Toast.makeText(this, "验证成功，已写入风控票据", Toast.LENGTH_SHORT).show()
             refreshSection("风控验证")
+        }
+
+    private val exportLogsLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (uri == null) return@registerForActivityResult
+            exportLogsJob?.cancel()
+            exportLogsJob =
+                lifecycleScope.launch {
+                    Toast.makeText(this@SettingsActivity, "正在导出日志…", Toast.LENGTH_SHORT).show()
+                    runCatching {
+                        withContext(Dispatchers.IO) {
+                            LogExporter.exportToTreeUri(this@SettingsActivity, uri)
+                        }
+                    }.onSuccess { result ->
+                        Toast.makeText(
+                            this@SettingsActivity,
+                            "已导出：${result.fileName}（${result.includedFiles}个文件）",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }.onFailure { t ->
+                        AppLog.w("Settings", "export logs failed", t)
+                        val msg = t.message?.takeIf { it.isNotBlank() } ?: "未知错误"
+                        Toast.makeText(this@SettingsActivity, "导出失败：$msg", Toast.LENGTH_LONG).show()
+                    }
+                }
         }
 
     private val sections = listOf(
@@ -312,6 +339,7 @@ class SettingsActivity : BaseActivity() {
                     SettingEntry("项目地址", PROJECT_URL, null),
                     SettingEntry("QQ交流群", QQ_GROUP, null),
                     SettingEntry("日志标签", "BLBL", "用于 Logcat 过滤"),
+                    SettingEntry("导出日志", "选择文件夹", "导出日志zip到你选择的文件夹"),
                     aboutUpdateEntry(),
                 )
             }
@@ -362,6 +390,7 @@ class SettingsActivity : BaseActivity() {
             "风控验证" -> showGaiaVgateDialog(currentSectionIndex, entry.title)
             "清理缓存" -> showClearCacheDialog(currentSectionIndex, entry.title)
             "清除登录" -> showClearLoginDialog(currentSectionIndex, entry.title)
+            "导出日志" -> exportLogsLauncher.launch(null)
 
             "以全屏模式运行" -> {
                 prefs.fullscreenEnabled = !prefs.fullscreenEnabled

@@ -231,7 +231,7 @@ internal fun PlayerActivity.startPlayback(
                         debug.cdnHost = runCatching { Uri.parse(playable.videoUrl).host }.getOrNull()
                         AppLog.i(
                             "Player",
-                            "picked DASH qn=${playable.qn} codecid=${playable.codecid} dv=${playable.isDolbyVision} a=${playable.audioKind}(${playable.audioId}) video=${playable.videoUrl.take(40)}",
+                            "picked DASH qn=${playable.qn} codecid=${playable.codecid} dv=${playable.isDolbyVision} a=${playable.audioKind}(${playable.audioId}) video=${playable.videoUrl}",
                         )
                         val videoFactory = createCdnFactory(DebugStreamKind.VIDEO, urlCandidates = playable.videoUrlCandidates)
                         val audioFactory = createCdnFactory(DebugStreamKind.AUDIO, urlCandidates = playable.audioUrlCandidates)
@@ -247,7 +247,7 @@ internal fun PlayerActivity.startPlayback(
                         debug.cdnHost = runCatching { Uri.parse(playable.videoUrl).host }.getOrNull()
                         AppLog.i(
                             "Player",
-                            "picked VideoOnly qn=${playable.qn} codecid=${playable.codecid} dv=${playable.isDolbyVision} video=${playable.videoUrl.take(40)}",
+                            "picked VideoOnly qn=${playable.qn} codecid=${playable.codecid} dv=${playable.isDolbyVision} video=${playable.videoUrl}",
                         )
                         val mainFactory = createCdnFactory(DebugStreamKind.MAIN, urlCandidates = playable.videoUrlCandidates)
                         exo.setMediaSource(buildProgressive(mainFactory, playable.videoUrl, subtitleConfig))
@@ -259,7 +259,7 @@ internal fun PlayerActivity.startPlayback(
                         session = session.copy(actualAudioId = 0)
                         (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
                         debug.cdnHost = runCatching { Uri.parse(playable.url).host }.getOrNull()
-                        AppLog.i("Player", "picked Progressive url=${playable.url.take(60)}")
+                        AppLog.i("Player", "picked Progressive url=${playable.url}")
                         val mainFactory = createCdnFactory(DebugStreamKind.MAIN, urlCandidates = playable.urlCandidates)
                         exo.setMediaSource(buildProgressive(mainFactory, playable.url, subtitleConfig))
                     }

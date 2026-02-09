@@ -1,7 +1,9 @@
 package blbl.cat3399
 
 import android.app.Application
+import android.os.Build
 import blbl.cat3399.core.log.AppLog
+import blbl.cat3399.core.log.CrashTracker
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.net.WebCookieMaintainer
 import kotlinx.coroutines.CoroutineScope
@@ -15,6 +17,12 @@ class BlblApp : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        AppLog.init(this)
+        CrashTracker.install(this)
+        AppLog.i(
+            "Startup",
+            "app=${BuildConfig.VERSION_NAME} api=${Build.VERSION.SDK_INT} device=${Build.MANUFACTURER} ${Build.MODEL} abi=${Build.SUPPORTED_ABIS.firstOrNull().orEmpty()}",
+        )
         AppLog.i("BlblApp", "onCreate")
         BiliClient.init(this)
         appScope.launch {

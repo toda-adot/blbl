@@ -22,6 +22,7 @@ import androidx.recyclerview.widget.SimpleItemAnimator
 import blbl.cat3399.R
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
+import blbl.cat3399.core.log.CrashTracker
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.prefs.AppPrefs
 import blbl.cat3399.core.tv.RemoteKeys
@@ -57,6 +58,7 @@ class MainActivity : BaseActivity() {
     private var pausedFocusWasInMain: Boolean = false
     private var focusListener: ViewTreeObserver.OnGlobalFocusChangeListener? = null
     private var disclaimerDialog: AlertDialog? = null
+    private var crashPromptDialog: AlertDialog? = null
     private lateinit var userInfoOverlay: DialogUserInfoBinding
     private var userInfoPrevFocus: WeakReference<View>? = null
     private var userInfoLoadJob: Job? = null
@@ -180,6 +182,7 @@ class MainActivity : BaseActivity() {
         forceInitialSidebarFocusIfNeeded()
         ensureInitialFocus()
         refreshSidebarUser()
+        showLastCrashPromptIfNeeded()
     }
 
     override fun onPause() {
@@ -488,6 +491,29 @@ class MainActivity : BaseActivity() {
         }
         dialog.show()
         disclaimerDialog = dialog
+    }
+
+    private fun showLastCrashPromptIfNeeded() {
+        if (!BiliClient.prefs.disclaimerAccepted) return
+        if (disclaimerDialog?.isShowing == true) return
+        if (crashPromptDialog?.isShowing == true) return
+
+        val crash = CrashTracker.loadLastCrash(this) ?: return
+        if (CrashTracker.wasPrompted(this, crash.crashAtMs)) return
+
+        CrashTracker.markPrompted(this, crash.crashAtMs)
+        val dialog =
+            MaterialAlertDialogBuilder(this)
+                .setTitle("检测到上次异常退出")
+                .setMessage("为了帮助开发者定位问题，请到「设置 - 关于应用 - 导出日志」导出日志并发送给开发者。")
+                .setNegativeButton("知道了", null)
+                .setPositiveButton("打开设置") { _, _ ->
+                    startActivity(Intent(this, SettingsActivity::class.java))
+                }
+                .create()
+        dialog.setOnDismissListener { crashPromptDialog = null }
+        dialog.show()
+        crashPromptDialog = dialog
     }
 
     private fun refreshSidebarUser() {

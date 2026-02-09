@@ -71,7 +71,7 @@ object ImageLoader {
                     }
                 }
             } catch (t: Throwable) {
-                AppLog.w(TAG, "load failed url=${normalized.take(64)}", t)
+                AppLog.w(TAG, "load failed url=$normalized", t)
             }
         }
         inFlight[view] = job
