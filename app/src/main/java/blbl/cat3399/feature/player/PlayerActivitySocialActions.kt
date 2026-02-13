@@ -448,14 +448,11 @@ internal fun PlayerActivity.playNext(userInitiated: Boolean) {
         if (userInitiated) Toast.makeText(this, "暂无下一个视频", Toast.LENGTH_SHORT).show()
         return
     }
-    if (list.size == 1) {
-        val exo = player ?: return
-        exo.seekTo(0)
-        exo.playWhenReady = true
-        exo.play()
+    val next = playlistIndex + 1
+    if (next !in list.indices) {
+        if (userInitiated) Toast.makeText(this, "已是最后一个视频", Toast.LENGTH_SHORT).show()
         return
     }
-    val next = (playlistIndex + 1) % list.size
     playPlaylistIndex(next)
 }
 
@@ -465,14 +462,11 @@ internal fun PlayerActivity.playPrev(userInitiated: Boolean) {
         if (userInitiated) Toast.makeText(this, "暂无上一个视频", Toast.LENGTH_SHORT).show()
         return
     }
-    if (list.size == 1) {
-        val exo = player ?: return
-        exo.seekTo(0)
-        exo.playWhenReady = true
-        exo.play()
+    val prev = playlistIndex - 1
+    if (prev !in list.indices) {
+        if (userInitiated) Toast.makeText(this, "已是第一个视频", Toast.LENGTH_SHORT).show()
         return
     }
-    val prev = (playlistIndex - 1 + list.size) % list.size
     playPlaylistIndex(prev)
 }
 

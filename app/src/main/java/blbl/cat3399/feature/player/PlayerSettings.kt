@@ -239,9 +239,21 @@ internal fun PlayerActivity.showSpeedDialog() {
     }
 }
 
+internal fun PlayerActivity.isPgcLikePlayback(): Boolean {
+    val epId = currentEpId
+    if (epId != null && epId > 0L) return true
+    val src = playlistSource?.trim().orEmpty()
+    if (src.startsWith("Bangumi:")) return true
+    return false
+}
+
 internal fun PlayerActivity.resolvedPlaybackMode(): String {
     val prefs = BiliClient.prefs
-    return session.playbackModeOverride ?: prefs.playerPlaybackMode
+    val override = session.playbackModeOverride
+    if (override != null) return override
+    // PGC (番剧/影视) 默认始终按“播放下一个”处理，不受全局默认播放模式影响。
+    if (isPgcLikePlayback()) return AppPrefs.PLAYER_PLAYBACK_MODE_NEXT
+    return prefs.playerPlaybackMode
 }
 
 internal fun PlayerActivity.playbackModeLabel(code: String): String =

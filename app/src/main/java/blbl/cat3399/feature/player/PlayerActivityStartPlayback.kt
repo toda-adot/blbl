@@ -440,7 +440,14 @@ internal fun PlayerActivity.handlePlaybackEnded(exo: ExoPlayer) {
         }
 
         AppPrefs.PLAYER_PLAYBACK_MODE_NEXT -> {
-            playNext(userInitiated = false)
+            val list = playlistItems
+            val idx = playlistIndex
+            val next = idx + 1
+            if (list.isNotEmpty() && idx in list.indices && next in list.indices) {
+                playPlaylistIndex(next)
+            } else {
+                finish()
+            }
         }
 
         AppPrefs.PLAYER_PLAYBACK_MODE_RECOMMEND -> {
