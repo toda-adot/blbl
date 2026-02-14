@@ -13,6 +13,7 @@ import blbl.cat3399.R
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.enableDpadTabFocus
+import blbl.cat3399.core.ui.postIfAlive
 import blbl.cat3399.databinding.FragmentMyTabsBinding
 import blbl.cat3399.ui.BackPressHandler
 import com.google.android.material.tabs.TabLayoutMediator
@@ -44,12 +45,11 @@ class MyTabsFragment : Fragment(), MyTabContentSwitchFocusHost, BackPressHandler
         }.attach()
 
         val tabLayout = binding.tabLayout
-        tabLayout.post {
-            if (_binding == null) return@post
+        tabLayout.postIfAlive(isAlive = { _binding != null }) {
             tabLayout.enableDpadTabFocus(selectOnFocusProvider = { BiliClient.prefs.tabSwitchFollowsFocus }) { position ->
                 AppLog.d("My", "tab focus pos=$position t=${SystemClock.uptimeMillis()}")
             }
-            val tabStrip = tabLayout.getChildAt(0) as? ViewGroup ?: return@post
+            val tabStrip = tabLayout.getChildAt(0) as? ViewGroup ?: return@postIfAlive
             for (i in 0 until tabStrip.childCount) {
                 tabStrip.getChildAt(i).setOnKeyListener { _, keyCode, event ->
                     if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
@@ -95,19 +95,24 @@ class MyTabsFragment : Fragment(), MyTabContentSwitchFocusHost, BackPressHandler
             } ?: return false
         val recycler = pageFragment.view?.findViewById<RecyclerView?>(R.id.recycler) ?: return false
 
-        recycler.post {
+        recycler.postIfAlive(isAlive = { _binding != null }) {
             val vh = recycler.findViewHolderForAdapterPosition(0)
-            if (vh != null) {
-                vh.itemView.requestFocus()
-                return@post
-            }
-            if (recycler.adapter?.itemCount == 0) {
-                recycler.requestFocus()
-                return@post
-            }
-            recycler.scrollToPosition(0)
-            recycler.post {
-                recycler.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() ?: recycler.requestFocus()
+            when {
+                vh != null -> {
+                    vh.itemView.requestFocus()
+                }
+
+                recycler.adapter?.itemCount == 0 -> {
+                    recycler.requestFocus()
+                }
+
+                else -> {
+                    recycler.scrollToPosition(0)
+                    recycler.postIfAlive(isAlive = { _binding != null }) {
+                        recycler.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus()
+                            ?: recycler.requestFocus()
+                    }
+                }
             }
         }
         return true

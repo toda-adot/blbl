@@ -189,7 +189,11 @@ internal class DpadGridController(
         recyclerView.findViewHolderForAdapterPosition(candidatePos)?.itemView?.requestFocus()
             ?: run {
                 recyclerView.scrollToPosition(candidatePos)
-                recyclerView.post { recyclerView.findViewHolderForAdapterPosition(candidatePos)?.itemView?.requestFocus() }
+                recyclerView.postIfAlive(
+                    isAlive = { installed && recyclerView.isAttachedToWindow && config.isEnabled() },
+                ) {
+                    recyclerView.findViewHolderForAdapterPosition(candidatePos)?.itemView?.requestFocus()
+                }
             }
         return true
     }
@@ -268,8 +272,10 @@ internal class DpadGridController(
                         else -> null
                     }
                 }
-            recyclerView.post {
-                if (tryFocusNextDownFromCurrent()) return@post
+            recyclerView.postIfAlive(
+                isAlive = { installed && recyclerView.isAttachedToWindow && config.isEnabled() },
+            ) {
+                if (tryFocusNextDownFromCurrent()) return@postIfAlive
                 if (candidatePos != null) focusAdapterPosition(candidatePos)
             }
             return true
@@ -304,7 +310,11 @@ internal class DpadGridController(
         recyclerView.findViewHolderForAdapterPosition(position)?.itemView?.requestFocus()
             ?: run {
                 recyclerView.scrollToPosition(position)
-                recyclerView.post { recyclerView.findViewHolderForAdapterPosition(position)?.itemView?.requestFocus() }
+                recyclerView.postIfAlive(
+                    isAlive = { installed && recyclerView.isAttachedToWindow && config.isEnabled() },
+                ) {
+                    recyclerView.findViewHolderForAdapterPosition(position)?.itemView?.requestFocus()
+                }
             }
         return true
     }

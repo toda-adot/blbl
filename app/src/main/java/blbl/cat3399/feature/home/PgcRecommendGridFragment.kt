@@ -20,6 +20,8 @@ import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.TabSwitchFocusTarget
 import blbl.cat3399.core.ui.UiScale
+import blbl.cat3399.core.ui.postIfAlive
+import blbl.cat3399.core.ui.postIfAttached
 import blbl.cat3399.databinding.FragmentVideoGridBinding
 import blbl.cat3399.feature.my.BangumiFollowAdapter
 import blbl.cat3399.feature.my.MyBangumiDetailFragment
@@ -190,18 +192,16 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
 
         val targetPosition = resolvePendingFocusTarget(itemCount = adapter.itemCount)
         val recycler = binding.recycler
-        recycler.post outerPost@{
-            if (_binding == null) return@outerPost
+        recycler.postIfAlive(isAlive = { _binding != null }) {
             val vh = recycler.findViewHolderForAdapterPosition(targetPosition)
             if (vh != null) {
                 vh.itemView.requestFocus()
                 lastFocusedAdapterPosition = targetPosition
                 clearPendingFocusFlags()
-                return@outerPost
+                return@postIfAlive
             }
             recycler.scrollToPosition(targetPosition)
-            recycler.post innerPost@{
-                if (_binding == null) return@innerPost
+            recycler.postIfAlive(isAlive = { _binding != null }) {
                 recycler.findViewHolderForAdapterPosition(targetPosition)?.itemView?.requestFocus() ?: recycler.requestFocus()
                 lastFocusedAdapterPosition = targetPosition
                 clearPendingFocusFlags()
@@ -280,7 +280,7 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
                 val filtered = res.items.filter { loadedSeasonIds.add(it.seasonId) }
                 if (isRefresh) adapter.submit(filtered) else adapter.append(filtered)
 
-                _binding?.recycler?.post {
+                _binding?.recycler?.postIfAlive(isAlive = { _binding != null }) {
                     maybeConsumePendingFocusFirstCard()
                     dpadGridController?.consumePendingFocusAfterLoadMore()
                 }
@@ -324,11 +324,9 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
         if (_binding == null) return
         if (pos < 0 || pos >= adapter.itemCount) return
         val recycler = binding.recycler
-        recycler.post outerPost@{
-            if (_binding == null) return@outerPost
+        recycler.postIfAlive(isAlive = { _binding != null }) {
             recycler.scrollToPosition(pos)
-            recycler.post innerPost@{
-                if (_binding == null) return@innerPost
+            recycler.postIfAlive(isAlive = { _binding != null }) {
                 recycler.findViewHolderForAdapterPosition(pos)?.itemView?.requestFocus()
                 pendingRestorePosition = null
             }
@@ -354,7 +352,7 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
         if (next >= tabLayout.tabCount) return false
         captureCurrentFocusedAdapterPosition()
         tabLayout.getTabAt(next)?.select() ?: return false
-        tabLayout.post {
+        tabLayout.postIfAttached {
             (parentFragment as? VideoGridTabSwitchFocusHost)?.requestFocusCurrentPageFirstCardFromContentSwitch()
                 ?: tabStrip.getChildAt(next)?.requestFocus()
         }
@@ -371,7 +369,7 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
         if (prev < 0) return false
         captureCurrentFocusedAdapterPosition()
         tabLayout.getTabAt(prev)?.select() ?: return false
-        tabLayout.post {
+        tabLayout.postIfAttached {
             (parentFragment as? VideoGridTabSwitchFocusHost)?.requestFocusCurrentPageFirstCardFromContentSwitch()
                 ?: tabStrip.getChildAt(prev)?.requestFocus()
         }

@@ -21,6 +21,8 @@ import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.BackButtonSizingHelper
 import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.UiScale
+import blbl.cat3399.core.ui.postDelayedIfAlive
+import blbl.cat3399.core.ui.postIfAlive
 import blbl.cat3399.core.util.Format
 import blbl.cat3399.databinding.FragmentMyBangumiDetailBinding
 import blbl.cat3399.feature.player.PlayerActivity
@@ -155,16 +157,15 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
             pendingAutoFocusPrimary = false
             return
         }
-        b.root.post {
-            val bb = _binding ?: return@post
-            if (!isResumed) return@post
-            if (!pendingAutoFocusPrimary) return@post
+        val isUiAlive = { _binding === b && isResumed }
+        b.root.postIfAlive(isAlive = isUiAlive) {
+            if (!pendingAutoFocusPrimary) return@postIfAlive
             val focused2 = activity?.currentFocus
-            if (focused2 != null && FocusTreeUtils.isDescendantOf(focused2, bb.root) && focused2 != bb.btnBack) {
+            if (focused2 != null && FocusTreeUtils.isDescendantOf(focused2, b.root) && focused2 != b.btnBack) {
                 pendingAutoFocusPrimary = false
-                return@post
+                return@postIfAlive
             }
-            if (bb.btnPrimary.requestFocus()) {
+            if (b.btnPrimary.requestFocus()) {
                 pendingAutoFocusPrimary = false
             }
         }
@@ -195,13 +196,12 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
             return
         }
 
-        recycler.post {
-            val bb = _binding ?: return@post
-            if (!isResumed) return@post
-            if (!pendingAutoFocusFirstEpisode) return@post
-            if (epAdapter.itemCount <= 0) return@post
+        val isUiAlive = { _binding === b && isResumed }
+        recycler.postIfAlive(isAlive = isUiAlive) {
+            if (!pendingAutoFocusFirstEpisode) return@postIfAlive
+            if (epAdapter.itemCount <= 0) return@postIfAlive
 
-            val r = bb.recyclerEpisodes
+            val r = recycler
             val targetEpId = continueEpisode?.epId
             val targetPos =
                 targetEpId?.let { id ->
@@ -211,17 +211,17 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
             val focused2 = activity?.currentFocus
             if (focused2 != null && FocusTreeUtils.isDescendantOf(focused2, r)) {
                 pendingAutoFocusFirstEpisode = false
-                return@post
+                return@postIfAlive
             }
 
             val success = r.findViewHolderForAdapterPosition(safeTargetPos)?.itemView?.requestFocus() == true
             if (success) {
                 pendingAutoFocusFirstEpisode = false
-                return@post
+                return@postIfAlive
             }
 
             r.scrollToPosition(safeTargetPos)
-            r.postDelayed({ tryAutoFocusFirstEpisode() }, 16)
+            r.postDelayedIfAlive(delayMillis = 16, isAlive = isUiAlive) { tryAutoFocusFirstEpisode() }
         }
     }
 
@@ -331,19 +331,18 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
 
         if (anchorEpId == null) return
         val index = list.indexOfFirst { it.epId == anchorEpId }.takeIf { it >= 0 } ?: return
-        b.recyclerEpisodes.post {
-            val bb = _binding ?: return@post
-            bb.recyclerEpisodes.scrollToPosition(index)
+        b.recyclerEpisodes.postIfAlive(isAlive = { _binding === b }) {
+            b.recyclerEpisodes.scrollToPosition(index)
         }
     }
 
     private fun scrollEpisodeToPosition(position: Int, requestFocus: Boolean) {
         val b = _binding ?: return
         val recycler = b.recyclerEpisodes
-        recycler.post outerPost@{
-            val bb = _binding ?: return@outerPost
-            bb.recyclerEpisodes.scrollToPosition(position)
-            if (!requestFocus) return@outerPost
+        val isViewAlive = { _binding === b }
+        recycler.postIfAlive(isAlive = isViewAlive) {
+            recycler.scrollToPosition(position)
+            if (!requestFocus) return@postIfAlive
             requestEpisodeFocus(position = position, attempt = 0)
         }
     }
@@ -351,14 +350,14 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
     private fun requestEpisodeFocus(position: Int, attempt: Int) {
         val b = _binding ?: return
         val recycler = b.recyclerEpisodes
-        recycler.post outerPost@{
-            val bb = _binding ?: return@outerPost
-            val view = bb.recyclerEpisodes.findViewHolderForAdapterPosition(position)?.itemView
-            if (view?.requestFocus() == true) return@outerPost
+        val isUiAlive = { _binding === b && isResumed }
+        recycler.postIfAlive(isAlive = isUiAlive) {
+            val view = recycler.findViewHolderForAdapterPosition(position)?.itemView
+            if (view?.requestFocus() == true) return@postIfAlive
 
-            if (attempt >= 30) return@outerPost
-            bb.recyclerEpisodes.scrollToPosition(position)
-            bb.recyclerEpisodes.postDelayed({ requestEpisodeFocus(position = position, attempt = attempt + 1) }, 16)
+            if (attempt >= 30) return@postIfAlive
+            recycler.scrollToPosition(position)
+            recycler.postDelayedIfAlive(delayMillis = 16, isAlive = isUiAlive) { requestEpisodeFocus(position = position, attempt = attempt + 1) }
         }
     }
 
@@ -495,7 +494,8 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
                                     val dx = (itemView.width * 0.8f).roundToInt().coerceAtLeast(1)
                                     recycler.scrollBy(dx, 0)
                                 }
-                                recycler.post { requestEpisodeFocus(position = pos + 1, attempt = 0) }
+                                val isUiAlive = { _binding === b && isResumed }
+                                recycler.postIfAlive(isAlive = isUiAlive) { requestEpisodeFocus(position = pos + 1, attempt = 0) }
                                 true
                             }
 
@@ -515,7 +515,8 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
                                     val dx = (itemView.width * 0.8f).roundToInt().coerceAtLeast(1)
                                     recycler.scrollBy(-dx, 0)
                                 }
-                                recycler.post { requestEpisodeFocus(position = pos - 1, attempt = 0) }
+                                val isUiAlive = { _binding === b && isResumed }
+                                recycler.postIfAlive(isAlive = isUiAlive) { requestEpisodeFocus(position = pos - 1, attempt = 0) }
                                 true
                             }
 

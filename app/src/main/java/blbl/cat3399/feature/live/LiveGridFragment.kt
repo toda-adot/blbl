@@ -21,6 +21,9 @@ import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.GridSpanPolicy
 import blbl.cat3399.core.ui.UiScale
+import blbl.cat3399.core.ui.postDelayedIfAlive
+import blbl.cat3399.core.ui.postIfAlive
+import blbl.cat3399.core.ui.postIfAttached
 import blbl.cat3399.databinding.FragmentLiveGridBinding
 import blbl.cat3399.ui.RefreshKeyHandler
 import kotlinx.coroutines.CancellationException
@@ -99,7 +102,8 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
             val widthChanged = (right - left) != (oldRight - oldLeft)
             if (widthChanged) updateRecyclerSpanCountIfNeeded()
         }
-        binding.recycler.post { updateRecyclerSpanCountIfNeeded() }
+        val createdBinding = binding
+        createdBinding.recycler.postIfAlive(isAlive = { _binding === createdBinding && isAdded }) { updateRecyclerSpanCountIfNeeded() }
         dpadGridController?.release()
         dpadGridController =
             DpadGridController(
@@ -234,10 +238,12 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
                 if (applied.items.isNotEmpty()) {
                     if (applied.isRefresh) adapter.submit(applied.items) else adapter.append(applied.items)
                 }
-                _binding?.recycler?.post {
-                    restoreFocusIfNeeded()
-                    maybeConsumePendingFocusFirstCard()
-                    dpadGridController?.consumePendingFocusAfterLoadMore()
+                _binding?.let { b ->
+                    b.recycler.postIfAlive(isAlive = { _binding === b && isResumed }) {
+                        restoreFocusIfNeeded()
+                        maybeConsumePendingFocusFirstCard()
+                        dpadGridController?.consumePendingFocusAfterLoadMore()
+                    }
                 }
                 AppLog.i(
                     "LiveGrid",
@@ -339,19 +345,19 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
         }
 
         val targetPosition = resolvePendingFocusTarget(itemCount = adapter.itemCount)
-        val recycler = binding.recycler
-        recycler.post outer@{
-            if (_binding == null) return@outer
+        val b = _binding ?: return false
+        val recycler = b.recycler
+        val isUiAlive = { _binding === b && isResumed }
+        recycler.postIfAlive(isAlive = isUiAlive) {
             val vh = recycler.findViewHolderForAdapterPosition(targetPosition)
             if (vh != null) {
                 vh.itemView.requestFocus()
                 lastFocusedAdapterPosition = targetPosition
                 clearPendingFocusFlags()
-                return@outer
+                return@postIfAlive
             }
             recycler.scrollToPosition(targetPosition)
-            recycler.post inner@{
-                if (_binding == null) return@inner
+            recycler.postIfAlive(isAlive = isUiAlive) {
                 recycler.findViewHolderForAdapterPosition(targetPosition)?.itemView?.requestFocus()
                 lastFocusedAdapterPosition = targetPosition
                 clearPendingFocusFlags()
@@ -392,7 +398,8 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
         // Mirror the working "MyFavFoldersFragment"/"MyBangumiFollowFragment" restore pattern:
         // keep a pending position, scrollToPosition, then requestFocus on that ViewHolder.
         val pos = pendingRestorePosition ?: return false
-        if (_binding == null) return false
+        val b = _binding ?: return false
+        if (!isResumed) return false
         if (!this::adapter.isInitialized) return false
 
         val itemCount = adapter.itemCount
@@ -402,7 +409,8 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
             return false
         }
 
-        val recycler = binding.recycler
+        val recycler = b.recycler
+        val isUiAlive = { _binding === b && isResumed }
         // Do not "give up" just because some other view currently holds focus (e.g. app menu / back button).
         // Returning from another Activity can reset focus unexpectedly; our goal is to bring it back to the grid.
 
@@ -423,17 +431,15 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
             // requestFocus can fail briefly right after returning from another Activity; keep pending and retry.
         }
 
-        recycler.post outerPost@{
-            if (_binding == null) return@outerPost
+        recycler.postIfAlive(isAlive = isUiAlive) {
             recycler.scrollToPosition(pos)
-            recycler.post innerPost@{
-                if (_binding == null) return@innerPost
+            recycler.postIfAlive(isAlive = isUiAlive) inner@{
                 val vh = recycler.findViewHolderForAdapterPosition(pos)
                 if (vh != null) {
                     if (vh.itemView.requestFocus()) {
                         pendingRestorePosition = null
                         pendingRestoreAttemptsLeft = 0
-                        return@innerPost
+                        return@inner
                     }
                     // If focus request fails, keep pending and retry below.
                 }
@@ -449,7 +455,7 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
                     pendingRestorePosition = null
                     pendingRestoreAttemptsLeft = 0
                 } else {
-                    recycler.postDelayed({ restoreFocusIfNeeded() }, 16L)
+                    recycler.postDelayedIfAlive(delayMillis = 16L, isAlive = isUiAlive) { restoreFocusIfNeeded() }
                 }
             }
         }
@@ -481,7 +487,7 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
         if (next >= tabLayout.tabCount) return false
         captureCurrentFocusedAdapterPosition()
         tabLayout.getTabAt(next)?.select() ?: return false
-        tabLayout.post {
+        tabLayout.postIfAttached {
             (parentFragment as? LiveGridTabSwitchFocusHost)?.requestFocusCurrentPageFirstCardFromContentSwitch()
                 ?: tabStrip.getChildAt(next)?.requestFocus()
         }
@@ -498,7 +504,7 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
         if (prev < 0) return false
         captureCurrentFocusedAdapterPosition()
         tabLayout.getTabAt(prev)?.select() ?: return false
-        tabLayout.post {
+        tabLayout.postIfAttached {
             (parentFragment as? LiveGridTabSwitchFocusHost)?.requestFocusCurrentPageFirstCardFromContentSwitch()
                 ?: tabStrip.getChildAt(prev)?.requestFocus()
         }

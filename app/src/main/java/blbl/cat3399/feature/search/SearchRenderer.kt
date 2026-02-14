@@ -6,7 +6,6 @@ import android.util.TypedValue
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
-import android.view.ViewTreeObserver
 import android.view.inputmethod.InputMethodManager
 import android.widget.ImageView
 import android.widget.TextView
@@ -23,7 +22,9 @@ import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.GridSpanPolicy
 import blbl.cat3399.core.ui.UiScale
+import blbl.cat3399.core.ui.doOnPreDrawIfAlive
 import blbl.cat3399.core.ui.enableDpadTabFocus
+import blbl.cat3399.core.ui.postIfAlive
 import blbl.cat3399.databinding.FragmentSearchBinding
 import blbl.cat3399.feature.following.FollowingGridAdapter
 import blbl.cat3399.feature.following.UpDetailActivity
@@ -45,6 +46,9 @@ class SearchRenderer(
     private val state: SearchState,
     private val interactor: SearchInteractor,
 ) {
+    private val viewContext: Context = binding.root.context
+    private var released: Boolean = false
+
     val keyAdapter: SearchKeyAdapter =
         SearchKeyAdapter { key ->
             interactor.onKeyClicked(key)
@@ -72,11 +76,11 @@ class SearchRenderer(
     val liveAdapter: LiveRoomAdapter =
         LiveRoomAdapter { _, room ->
             if (!room.isLive) {
-                Toast.makeText(fragment.requireContext(), "未开播", Toast.LENGTH_SHORT).show()
+                Toast.makeText(viewContext, "未开播", Toast.LENGTH_SHORT).show()
                 return@LiveRoomAdapter
             }
             fragment.startActivity(
-                Intent(fragment.requireContext(), LivePlayerActivity::class.java)
+                Intent(viewContext, LivePlayerActivity::class.java)
                     .putExtra(LivePlayerActivity.EXTRA_ROOM_ID, room.roomId)
                     .putExtra(LivePlayerActivity.EXTRA_TITLE, room.title)
                     .putExtra(LivePlayerActivity.EXTRA_UNAME, room.uname),
@@ -87,7 +91,7 @@ class SearchRenderer(
         FollowingGridAdapter { following ->
             fun openProfile() {
                 fragment.startActivity(
-                    Intent(fragment.requireContext(), UpDetailActivity::class.java)
+                    Intent(viewContext, UpDetailActivity::class.java)
                         .putExtra(UpDetailActivity.EXTRA_MID, following.mid)
                         .putExtra(UpDetailActivity.EXTRA_NAME, following.name)
                         .putExtra(UpDetailActivity.EXTRA_AVATAR, following.avatarUrl)
@@ -98,7 +102,7 @@ class SearchRenderer(
             fun openLive() {
                 val rid = following.liveRoomId.takeIf { it > 0L } ?: return
                 fragment.startActivity(
-                    Intent(fragment.requireContext(), LivePlayerActivity::class.java)
+                    Intent(viewContext, LivePlayerActivity::class.java)
                         .putExtra(LivePlayerActivity.EXTRA_ROOM_ID, rid)
                         .putExtra(LivePlayerActivity.EXTRA_TITLE, "")
                         .putExtra(LivePlayerActivity.EXTRA_UNAME, following.name),
@@ -107,15 +111,15 @@ class SearchRenderer(
 
             if (following.isLive && following.liveRoomId > 0L) {
                 blbl.cat3399.core.ui.SingleChoiceDialog.show(
-                    context = fragment.requireContext(),
-                    title = fragment.getString(R.string.search_user_live_actions_title, following.name),
+                    context = viewContext,
+                    title = viewContext.getString(R.string.search_user_live_actions_title, following.name),
                     items =
                         listOf(
-                            fragment.getString(R.string.search_user_action_enter_live),
-                            fragment.getString(R.string.search_user_action_open_profile),
+                            viewContext.getString(R.string.search_user_action_enter_live),
+                            viewContext.getString(R.string.search_user_action_open_profile),
                         ),
                     checkedIndex = 0,
-                    negativeText = fragment.getString(android.R.string.cancel),
+                    negativeText = viewContext.getString(android.R.string.cancel),
                 ) { which, _ ->
                     when (which) {
                         0 -> openLive()
@@ -145,7 +149,7 @@ class SearchRenderer(
                     val token = PlayerPlaylistStore.put(items = playlistItems, index = pos, source = "Search")
                     if (BiliClient.prefs.playerOpenDetailBeforePlay) {
                         fragment.startActivity(
-                            Intent(fragment.requireContext(), VideoDetailActivity::class.java)
+                            Intent(viewContext, VideoDetailActivity::class.java)
                                 .putExtra(VideoDetailActivity.EXTRA_BVID, card.bvid)
                                 .putExtra(VideoDetailActivity.EXTRA_CID, card.cid ?: -1L)
                                 .apply { card.aid?.let { putExtra(VideoDetailActivity.EXTRA_AID, it) } }
@@ -161,7 +165,7 @@ class SearchRenderer(
                         )
                     } else {
                         fragment.startActivity(
-                            Intent(fragment.requireContext(), PlayerActivity::class.java)
+                            Intent(viewContext, PlayerActivity::class.java)
                                 .putExtra(PlayerActivity.EXTRA_BVID, card.bvid)
                                 .putExtra(PlayerActivity.EXTRA_CID, card.cid ?: -1L)
                                 .putExtra(PlayerActivity.EXTRA_PLAYLIST_TOKEN, token)
@@ -180,7 +184,7 @@ class SearchRenderer(
         setupQueryInput()
 
         binding.recyclerKeys.adapter = keyAdapter
-        binding.recyclerKeys.layoutManager = GridLayoutManager(fragment.requireContext(), 6)
+        binding.recyclerKeys.layoutManager = GridLayoutManager(viewContext, 6)
         (binding.recyclerKeys.itemAnimator as? SimpleItemAnimator)?.supportsChangeAnimations = false
         keyAdapter.submit(KEYS)
         binding.recyclerKeys.addOnChildAttachStateChangeListener(
@@ -416,7 +420,7 @@ class SearchRenderer(
             input.requestFocus()
             input.setSelection(input.text?.length ?: 0)
             // Some TV input methods won't show the IME synchronously; post for reliability.
-            input.post {
+            input.postIfAlive(isAlive = { !released }) {
                 if (!input.isFocused) input.requestFocus()
                 input.setSelection(input.text?.length ?: 0)
                 showIme(input)
@@ -482,7 +486,7 @@ class SearchRenderer(
     fun setupResults() {
         binding.recyclerResults.adapter = adapterForTab(state.currentTabIndex)
         binding.recyclerResults.setHasFixedSize(true)
-        binding.recyclerResults.layoutManager = GridLayoutManager(fragment.requireContext(), spanCountForCurrentTab())
+        binding.recyclerResults.layoutManager = GridLayoutManager(viewContext, spanCountForCurrentTab())
         (binding.recyclerResults.itemAnimator as? SimpleItemAnimator)?.supportsChangeAnimations = false
 
         resultsGridController?.release()
@@ -543,9 +547,9 @@ class SearchRenderer(
         binding.tabLayout.addTab(binding.tabLayout.newTab().setText(R.string.search_tab_user))
 
         val tabLayout = binding.tabLayout
-        tabLayout.post {
+        tabLayout.postIfAlive(isAlive = { !released }) {
             tabLayout.enableDpadTabFocus(selectOnFocus = false)
-            val tabStrip = tabLayout.getChildAt(0) as? ViewGroup ?: return@post
+            val tabStrip = tabLayout.getChildAt(0) as? ViewGroup ?: return@postIfAlive
             for (i in 0 until tabStrip.childCount) {
                 tabStrip.getChildAt(i).setOnKeyListener { _, keyCode, event ->
                     if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
@@ -596,27 +600,22 @@ class SearchRenderer(
     }
 
     private fun scheduleTabTextScaleFix() {
+        if (released) return
         if (pendingTabTextScaleFix) return
-        val tabLayout = binding.tabLayout
-        val observer = tabLayout.viewTreeObserver
-        if (!observer.isAlive) return
         pendingTabTextScaleFix = true
-        observer.addOnPreDrawListener(
-            object : ViewTreeObserver.OnPreDrawListener {
-                override fun onPreDraw(): Boolean {
-                    pendingTabTextScaleFix = false
-                    if (observer.isAlive) observer.removeOnPreDrawListener(this)
-                    enforceTabTextScale()
-                    return true
-                }
-            },
-        )
+        val tabLayout = binding.tabLayout
+        tabLayout.doOnPreDrawIfAlive(isAlive = { !released }) {
+            pendingTabTextScaleFix = false
+            enforceTabTextScale()
+        }
         tabLayout.invalidate()
     }
 
-    private fun enforceTabTextScale(scale: Float = UiScale.factor(fragment.requireContext())) {
+    private fun enforceTabTextScale() {
+        if (released) return
+        val scale = UiScale.factor(viewContext)
         val basePx =
-            fragment.requireContext().obtainStyledAttributes(R.style.TextAppearance_Blbl_Tab, intArrayOf(android.R.attr.textSize)).run {
+            viewContext.obtainStyledAttributes(R.style.TextAppearance_Blbl_Tab, intArrayOf(android.R.attr.textSize)).run {
                 try {
                     getDimension(0, 0f)
                 } finally {
@@ -669,6 +668,9 @@ class SearchRenderer(
     }
 
     fun release() {
+        if (released) return
+        released = true
+        pendingTabTextScaleFix = false
         resultsGridController?.release()
         resultsGridController = null
     }
@@ -698,14 +700,14 @@ class SearchRenderer(
     }
 
     fun onResultsApplied() {
-        binding.recyclerResults.post {
+        binding.recyclerResults.postIfAlive(isAlive = { !released }) {
             maybeConsumePendingFocusFirstResultCardFromTabSwitch()
             resultsGridController?.consumePendingFocusAfterLoadMore()
         }
     }
 
     fun updateQueryUi() {
-        val hintText = state.defaultHint ?: fragment.getString(R.string.tab_search)
+        val hintText = state.defaultHint ?: viewContext.getString(R.string.tab_search)
         binding.tvQuery.hint = hintText
         updateQueryAlpha(query = state.query)
 
@@ -762,11 +764,14 @@ class SearchRenderer(
     }
 
     fun focusFirstKey() {
-        binding.recyclerKeys.post {
-            binding.recyclerKeys.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus()
-                ?: binding.recyclerKeys.post {
-                    binding.recyclerKeys.scrollToPosition(0)
-                    binding.recyclerKeys.post { binding.recyclerKeys.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() }
+        val recycler = binding.recyclerKeys
+        recycler.postIfAlive(isAlive = { !released }) {
+            recycler.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus()
+                ?: recycler.postIfAlive(isAlive = { !released }) {
+                    recycler.scrollToPosition(0)
+                    recycler.postIfAlive(isAlive = { !released }) {
+                        recycler.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus()
+                    }
                 }
         }
     }
@@ -818,17 +823,16 @@ class SearchRenderer(
         }
 
         val recycler = binding.recyclerResults
-        recycler.post outer@{
-            if (!fragment.isAdded) return@outer
+        val isUiAlive = { !released && fragment.isAdded && fragment.isResumed }
+        recycler.postIfAlive(isAlive = isUiAlive) {
             val vh = recycler.findViewHolderForAdapterPosition(0)
             if (vh != null) {
                 vh.itemView.requestFocus()
                 state.pendingFocusFirstResultCardFromTabSwitch = false
-                return@outer
+                return@postIfAlive
             }
             recycler.scrollToPosition(0)
-            recycler.post inner@{
-                if (!fragment.isAdded) return@inner
+            recycler.postIfAlive(isAlive = isUiAlive) {
                 recycler.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() ?: recycler.requestFocus()
                 state.pendingFocusFirstResultCardFromTabSwitch = false
             }
@@ -845,7 +849,7 @@ class SearchRenderer(
         if (next >= binding.tabLayout.tabCount) return false
         binding.tabLayout.getTabAt(next)?.select() ?: return false
         val tabLayout = binding.tabLayout
-        tabLayout.post {
+        tabLayout.postIfAlive(isAlive = { !released }) {
             requestFocusResultsContentFromTabSwitch() || (tabStrip.getChildAt(next)?.requestFocus() == true)
         }
         return true
@@ -860,7 +864,7 @@ class SearchRenderer(
         if (prev < 0) return false
         binding.tabLayout.getTabAt(prev)?.select() ?: return false
         val tabLayout = binding.tabLayout
-        tabLayout.post {
+        tabLayout.postIfAlive(isAlive = { !released }) {
             requestFocusResultsContentFromTabSwitch() || (tabStrip.getChildAt(prev)?.requestFocus() == true)
         }
         return true
@@ -872,7 +876,7 @@ class SearchRenderer(
         val safePos = pos.coerceIn(0, count - 1)
         val recycler = binding.recyclerKeys
         recycler.scrollToPosition(safePos)
-        recycler.post {
+        recycler.postIfAlive(isAlive = { !released }) {
             recycler.findViewHolderForAdapterPosition(safePos)?.itemView?.requestFocus()
         }
         return true
@@ -886,7 +890,7 @@ class SearchRenderer(
         val safePos = pos.coerceIn(0, count - 1)
         val recycler = binding.recyclerSuggest
         recycler.scrollToPosition(safePos)
-        recycler.post {
+        recycler.postIfAlive(isAlive = { !released }) {
             recycler.findViewHolderForAdapterPosition(safePos)?.itemView?.requestFocus()
         }
         return true
@@ -900,7 +904,7 @@ class SearchRenderer(
         val last = count - 1
         val recycler = binding.recyclerSuggest
         recycler.scrollToPosition(last)
-        recycler.post {
+        recycler.postIfAlive(isAlive = { !released }) {
             recycler.findViewHolderForAdapterPosition(last)?.itemView?.requestFocus()
         }
         return true
@@ -908,7 +912,7 @@ class SearchRenderer(
 
     fun focusSelectedTabAfterShow() {
         val tabLayout = binding.tabLayout
-        tabLayout.post {
+        tabLayout.postIfAlive(isAlive = { !released }) {
             if (isResultsVisible()) {
                 focusSelectedTab()
             }
@@ -961,7 +965,7 @@ class SearchRenderer(
     }
 
     private fun spanCountForWidth(): Int {
-        val dm = fragment.resources.displayMetrics
+        val dm = binding.root.resources.displayMetrics
         val widthDp = dm.widthPixels / dm.density
         return GridSpanPolicy.fixedSpanCountForWidthDp(
             widthDp = widthDp,
@@ -975,7 +979,7 @@ class SearchRenderer(
         when (state.tabForIndex(state.currentTabIndex)) {
             SearchTab.Video -> {
                 binding.btnSort.visibility = View.VISIBLE
-                binding.tvSort.text = fragment.getString(state.currentVideoOrder.labelRes)
+                binding.tvSort.text = viewContext.getString(state.currentVideoOrder.labelRes)
             }
 
             SearchTab.Bangumi,
@@ -987,12 +991,12 @@ class SearchRenderer(
 
             SearchTab.Live -> {
                 binding.btnSort.visibility = View.VISIBLE
-                binding.tvSort.text = fragment.getString(state.currentLiveOrder.labelRes)
+                binding.tvSort.text = viewContext.getString(state.currentLiveOrder.labelRes)
             }
 
             SearchTab.User -> {
                 binding.btnSort.visibility = View.VISIBLE
-                binding.tvSort.text = fragment.getString(state.currentUserOrder.labelRes)
+                binding.tvSort.text = viewContext.getString(state.currentUserOrder.labelRes)
             }
         }
     }
@@ -1008,14 +1012,14 @@ class SearchRenderer(
         val safePos = pos.coerceIn(0, adapter.itemCount - 1)
 
         val recycler = binding.recyclerResults
-        recycler.post {
+        recycler.postIfAlive(isAlive = { !released }) {
             val focusedNow = recycler.findViewHolderForAdapterPosition(safePos)?.itemView?.requestFocus() == true
             if (focusedNow) {
                 state.pendingRestoreMediaPos = null
-                return@post
+                return@postIfAlive
             }
             recycler.scrollToPosition(safePos)
-            recycler.post {
+            recycler.postIfAlive(isAlive = { !released }) {
                 val focusedAfterScroll = recycler.findViewHolderForAdapterPosition(safePos)?.itemView?.requestFocus() == true
                 if (focusedAfterScroll) state.pendingRestoreMediaPos = null
             }
@@ -1023,7 +1027,7 @@ class SearchRenderer(
     }
 
     fun applyUiScale() {
-        val newScale = UiScale.factor(fragment.requireContext())
+        val newScale = UiScale.factor(viewContext)
         val oldScale = state.lastAppliedUiScale ?: 1.0f
         if (newScale == oldScale) return
 
@@ -1152,7 +1156,7 @@ class SearchRenderer(
         rescaleMargins(binding.recyclerHot, start = false, top = false, end = true, bottom = false)
 
         rescaleMargins(binding.tabLayout, start = true, top = false, end = true, bottom = false)
-        enforceTabTextScale(scale = newScale)
+        enforceTabTextScale()
 
         run {
             val sortContainer = binding.btnSort.getChildAt(0) as? ViewGroup

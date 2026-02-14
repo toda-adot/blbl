@@ -19,6 +19,8 @@ import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.GridSpanPolicy
 import blbl.cat3399.core.ui.UiScale
+import blbl.cat3399.core.ui.postDelayedIfAlive
+import blbl.cat3399.core.ui.postIfAlive
 import blbl.cat3399.databinding.FragmentLiveAreaDetailBinding
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -106,7 +108,8 @@ class LiveAreaDetailFragment : Fragment() {
             val widthChanged = (right - left) != (oldRight - oldLeft)
             if (widthChanged) updateRecyclerSpanCountIfNeeded()
         }
-        binding.recycler.post { updateRecyclerSpanCountIfNeeded() }
+        val createdBinding = binding
+        createdBinding.recycler.postIfAlive(isAlive = { _binding === createdBinding && isAdded }) { updateRecyclerSpanCountIfNeeded() }
 
         // Keep focus inside this detail page and provide a consistent edge behavior, similar to favorites detail.
         dpadGridController?.release()
@@ -160,14 +163,15 @@ class LiveAreaDetailFragment : Fragment() {
         updateRecyclerSpanCountIfNeeded(force = true)
         maybeTriggerInitialLoad()
         // Make sure focus stays within this detail page on return.
-        binding.root.post {
-            if (_binding == null || !isAdded) return@post
+        val b = _binding ?: return
+        val isUiAlive = { _binding === b && isResumed }
+        b.root.postIfAlive(isAlive = isUiAlive) {
             val cur = activity?.currentFocus
-            if (cur == null || !FocusTreeUtils.isDescendantOf(cur, binding.root)) {
-                binding.btnBack.requestFocus()
+            if (cur == null || !FocusTreeUtils.isDescendantOf(cur, b.root)) {
+                b.btnBack.requestFocus()
             }
         }
-        binding.recycler.post {
+        b.recycler.postIfAlive(isAlive = isUiAlive) {
             restoreFocusIfNeeded()
             maybeFocusFirstItem()
         }
@@ -283,7 +287,11 @@ class LiveAreaDetailFragment : Fragment() {
                 if (filtered.isNotEmpty()) {
                     if (page == 1) adapter.submit(filtered) else adapter.append(filtered)
                 }
-                _binding?.recycler?.post { dpadGridController?.consumePendingFocusAfterLoadMore() }
+                _binding?.let { b ->
+                    b.recycler.postIfAlive(isAlive = { _binding === b && isResumed }) {
+                        dpadGridController?.consumePendingFocusAfterLoadMore()
+                    }
+                }
                 restoreFocusIfNeeded()
                 maybeFocusFirstItem()
                 page++
@@ -302,20 +310,30 @@ class LiveAreaDetailFragment : Fragment() {
     private fun restoreFocusIfNeeded() {
         val pos = pendingRestorePosition ?: return
         val b = _binding ?: return
+        if (!isResumed) return
         if (!::adapter.isInitialized) return
         if (pos < 0 || pos >= adapter.itemCount) return
         val recycler = b.recycler
 
-        recycler.post outerPost@{
-            if (_binding == null) return@outerPost
+        val isUiAlive = { _binding === b && isResumed }
+
+        // Fast-path: already laid out.
+        recycler.findViewHolderForAdapterPosition(pos)?.itemView?.let { target ->
+            if (target.requestFocus()) {
+                pendingRestorePosition = null
+                pendingRestoreAttemptsLeft = 0
+                return
+            }
+        }
+
+        recycler.postIfAlive(isAlive = isUiAlive) outer@{
             recycler.scrollToPosition(pos)
-            recycler.post innerPost@{
-                if (_binding == null) return@innerPost
+            recycler.postIfAlive(isAlive = isUiAlive) inner@{
                 val vh = recycler.findViewHolderForAdapterPosition(pos)
                 if (vh != null && vh.itemView.requestFocus()) {
                     pendingRestorePosition = null
                     pendingRestoreAttemptsLeft = 0
-                    return@innerPost
+                    return@inner
                 }
 
                 pendingRestoreAttemptsLeft--
@@ -324,7 +342,7 @@ class LiveAreaDetailFragment : Fragment() {
                     pendingRestorePosition = null
                     pendingRestoreAttemptsLeft = 0
                 } else {
-                    recycler.postDelayed({ restoreFocusIfNeeded() }, 16L)
+                    recycler.postDelayedIfAlive(delayMillis = 16L, isAlive = isUiAlive) { restoreFocusIfNeeded() }
                 }
             }
         }
@@ -334,6 +352,7 @@ class LiveAreaDetailFragment : Fragment() {
         if (pendingRestorePosition != null) return
         if (!pendingFocusFirstItem) return
         val b = _binding ?: return
+        if (!isResumed) return
         if (!::adapter.isInitialized) return
         if (adapter.itemCount <= 0) return
 
@@ -344,17 +363,26 @@ class LiveAreaDetailFragment : Fragment() {
             return
         }
 
-        recycler.post outerPost@{
-            if (_binding == null) return@outerPost
+        val isUiAlive = { _binding === b && isResumed }
+
+        // Fast-path: already laid out.
+        recycler.findViewHolderForAdapterPosition(0)?.itemView?.let { first ->
+            if (first.requestFocus()) {
+                pendingFocusFirstItem = false
+                return
+            }
+        }
+
+        recycler.postIfAlive(isAlive = isUiAlive) {
             val vh = recycler.findViewHolderForAdapterPosition(0)
             if (vh != null) {
                 vh.itemView.requestFocus()
                 pendingFocusFirstItem = false
-                return@outerPost
+                return@postIfAlive
             }
+
             recycler.scrollToPosition(0)
-            recycler.post innerPost@{
-                if (_binding == null) return@innerPost
+            recycler.postIfAlive(isAlive = isUiAlive) {
                 recycler.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() == true || b.btnBack.requestFocus()
                 pendingFocusFirstItem = false
             }

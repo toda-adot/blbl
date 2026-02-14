@@ -21,6 +21,7 @@ import blbl.cat3399.core.paging.appliedOrNull
 import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.UiScale
+import blbl.cat3399.core.ui.postIfAlive
 import blbl.cat3399.databinding.FragmentVideoGridBinding
 import blbl.cat3399.feature.following.openUpDetailFromVideoCard
 import blbl.cat3399.feature.player.PlayerActivity
@@ -206,17 +207,15 @@ class MyHistoryFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler 
         }
 
         val recycler = binding.recycler
-        recycler.post outerPost@{
-            if (_binding == null) return@outerPost
+        recycler.postIfAlive(isAlive = { _binding != null }) {
             val vh = recycler.findViewHolderForAdapterPosition(0)
             if (vh != null) {
                 vh.itemView.requestFocus()
                 pendingFocusFirstItemFromTabSwitch = false
-                return@outerPost
+                return@postIfAlive
             }
             recycler.scrollToPosition(0)
-            recycler.post innerPost@{
-                if (_binding == null) return@innerPost
+            recycler.postIfAlive(isAlive = { _binding != null }) {
                 recycler.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() ?: recycler.requestFocus()
                 pendingFocusFirstItemFromTabSwitch = false
             }
@@ -300,7 +299,7 @@ class MyHistoryFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler 
                 if (applied.items.isEmpty()) return@launch
                 applied.items.forEach { loadedKeys.add(it.stableKey()) }
                 if (applied.isRefresh) adapter.submit(applied.items) else adapter.append(applied.items)
-                _binding?.recycler?.post {
+                _binding?.recycler?.postIfAlive(isAlive = { _binding != null }) {
                     maybeConsumePendingFocusFirstItemFromTabSwitch()
                     dpadGridController?.consumePendingFocusAfterLoadMore()
                 }

@@ -18,6 +18,7 @@ import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.GridSpanPolicy
 import blbl.cat3399.core.ui.UiScale
+import blbl.cat3399.core.ui.postIfAlive
 import blbl.cat3399.databinding.FragmentDynamicBinding
 import blbl.cat3399.databinding.FragmentDynamicLoginBinding
 import blbl.cat3399.feature.following.openUpDetailFromVideoCard
@@ -330,7 +331,11 @@ class DynamicFragment : Fragment(), RefreshKeyHandler {
                 }
                 followPage = targetPage + 1
                 followEndReached = !res.hasMore
-                _binding?.recyclerFollowing?.post { followingListController?.consumePendingFocusAfterLoadMore() }
+                _binding?.let { b ->
+                    b.recyclerFollowing.postIfAlive(isAlive = { _binding === b && isResumed }) {
+                        followingListController?.consumePendingFocusAfterLoadMore()
+                    }
+                }
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 AppLog.e("Dynamic", "load followings failed page=$targetPage", t)
@@ -386,7 +391,11 @@ class DynamicFragment : Fragment(), RefreshKeyHandler {
                     val filtered = page.items.filter { loadedBvids.add(it.bvid) }
                     videoAdapter.append(filtered)
                 }
-                _binding?.recyclerDynamic?.post { dynamicGridController?.consumePendingFocusAfterLoadMore() }
+                _binding?.let { b ->
+                    b.recyclerDynamic.postIfAlive(isAlive = { _binding === b && isResumed }) {
+                        dynamicGridController?.consumePendingFocusAfterLoadMore()
+                    }
+                }
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 AppLog.e("Dynamic", "load feed failed mid=$selectedMid", t)
@@ -412,35 +421,32 @@ class DynamicFragment : Fragment(), RefreshKeyHandler {
     private fun focusSelectedFollowingIfAvailable(): Boolean {
         val b = _binding ?: return false
         val recyclerFollowing = b.recyclerFollowing
-        recyclerFollowing.post outer@{
-            val binding = _binding ?: return@outer
-            val recycler = binding.recyclerFollowing
-
+        val isUiAlive = { _binding === b && isResumed }
+        recyclerFollowing.postIfAlive(isAlive = isUiAlive) {
+            val recycler = recyclerFollowing
             val selectedChild =
                 (0 until recycler.childCount)
                     .map { recycler.getChildAt(it) }
                     .firstOrNull { it?.isSelected == true }
             if (selectedChild != null) {
                 selectedChild.requestFocus()
-                return@outer
+                return@postIfAlive
             }
 
             val vh = recycler.findViewHolderForAdapterPosition(0)
             if (vh != null) {
                 vh.itemView.requestFocus()
-                return@outer
+                return@postIfAlive
             }
 
             if ((recycler.adapter?.itemCount ?: 0) <= 0) {
                 recycler.requestFocus()
-                return@outer
+                return@postIfAlive
             }
 
             recycler.scrollToPosition(0)
-            recycler.post inner@{
-                val b2 = _binding ?: return@inner
-                val recycler2 = b2.recyclerFollowing
-                recycler2.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() ?: recycler2.requestFocus()
+            recycler.postIfAlive(isAlive = isUiAlive) {
+                recycler.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() ?: recycler.requestFocus()
             }
         }
         return true

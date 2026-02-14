@@ -132,17 +132,18 @@ class SearchInteractor(
     }
 
     fun showSortDialog() {
+        val context = fragment.context ?: return
         when (state.tabForIndex(state.currentTabIndex)) {
             SearchTab.Video -> {
                 val items = VideoOrder.entries
-                val labels = items.map { fragment.getString(it.labelRes) }
+                val labels = items.map { context.getString(it.labelRes) }
                 val checked = items.indexOf(state.currentVideoOrder).coerceAtLeast(0)
                 SingleChoiceDialog.show(
-                    context = fragment.requireContext(),
-                    title = fragment.getString(R.string.search_sort_title),
+                    context = context,
+                    title = context.getString(R.string.search_sort_title),
                     items = labels,
                     checkedIndex = checked,
-                    negativeText = fragment.getString(android.R.string.cancel),
+                    negativeText = context.getString(android.R.string.cancel),
                 ) { which, _ ->
                     val picked = items.getOrNull(which) ?: return@show
                     if (picked != state.currentVideoOrder) {
@@ -159,14 +160,14 @@ class SearchInteractor(
 
             SearchTab.Live -> {
                 val items = LiveOrder.entries
-                val labels = items.map { fragment.getString(it.labelRes) }
+                val labels = items.map { context.getString(it.labelRes) }
                 val checked = items.indexOf(state.currentLiveOrder).coerceAtLeast(0)
                 SingleChoiceDialog.show(
-                    context = fragment.requireContext(),
-                    title = fragment.getString(R.string.search_sort_title),
+                    context = context,
+                    title = context.getString(R.string.search_sort_title),
                     items = labels,
                     checkedIndex = checked,
-                    negativeText = fragment.getString(android.R.string.cancel),
+                    negativeText = context.getString(android.R.string.cancel),
                 ) { which, _ ->
                     val picked = items.getOrNull(which) ?: return@show
                     if (picked != state.currentLiveOrder) {
@@ -179,14 +180,14 @@ class SearchInteractor(
 
             SearchTab.User -> {
                 val items = UserOrder.entries
-                val labels = items.map { fragment.getString(it.labelRes) }
+                val labels = items.map { context.getString(it.labelRes) }
                 val checked = items.indexOf(state.currentUserOrder).coerceAtLeast(0)
                 SingleChoiceDialog.show(
-                    context = fragment.requireContext(),
-                    title = fragment.getString(R.string.search_sort_title),
+                    context = context,
+                    title = context.getString(R.string.search_sort_title),
                     items = labels,
                     checkedIndex = checked,
-                    negativeText = fragment.getString(android.R.string.cancel),
+                    negativeText = context.getString(android.R.string.cancel),
                 ) { which, _ ->
                     val picked = items.getOrNull(which) ?: return@show
                     if (picked != state.currentUserOrder) {

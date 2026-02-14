@@ -15,6 +15,8 @@ import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.GridSpanPolicy
+import blbl.cat3399.core.ui.postIfAlive
+import blbl.cat3399.core.ui.postIfAttached
 import blbl.cat3399.databinding.FragmentLiveGridBinding
 import blbl.cat3399.ui.RefreshKeyHandler
 import kotlinx.coroutines.CancellationException
@@ -141,7 +143,7 @@ class LiveAreaIndexFragment : Fragment(), LivePageFocusTarget, LivePageReturnFoc
                         ?.filter { it.id > 0 && it.name.isNotBlank() }
                         .orEmpty()
                 adapter.submit(children)
-                _binding?.recycler?.post {
+                _binding?.recycler?.postIfAlive(isAlive = { _binding != null }) {
                     restoreFocusIfNeeded()
                     maybeConsumePendingFocusFirstCard()
                 }
@@ -215,11 +217,9 @@ class LiveAreaIndexFragment : Fragment(), LivePageFocusTarget, LivePageReturnFoc
         }
 
         val recycler = binding.recycler
-        recycler.post outerPost@{
-            if (_binding == null) return@outerPost
+        recycler.postIfAlive(isAlive = { _binding != null }) {
             recycler.scrollToPosition(pos)
-            recycler.post innerPost@{
-                if (_binding == null) return@innerPost
+            recycler.postIfAlive(isAlive = { _binding != null }) {
                 tryRestoreFocusAtPosition(recycler = recycler, pos = pos, attemptsLeft = 3)
             }
         }
@@ -246,7 +246,9 @@ class LiveAreaIndexFragment : Fragment(), LivePageFocusTarget, LivePageReturnFoc
             return
         }
 
-        recycler.post { tryRestoreFocusAtPosition(recycler = recycler, pos = pos, attemptsLeft = attemptsLeft - 1) }
+        recycler.postIfAlive(isAlive = { isAdded && _binding != null && isResumed }) {
+            tryRestoreFocusAtPosition(recycler = recycler, pos = pos, attemptsLeft = attemptsLeft - 1)
+        }
     }
 
     private fun maybeConsumePendingFocusFirstCard(): Boolean {
@@ -279,18 +281,16 @@ class LiveAreaIndexFragment : Fragment(), LivePageFocusTarget, LivePageReturnFoc
 
         val targetPosition = resolvePendingFocusTarget(itemCount = adapter.itemCount)
         val recycler = binding.recycler
-        recycler.post outerPost@{
-            if (_binding == null) return@outerPost
+        recycler.postIfAlive(isAlive = { _binding != null }) {
             val vh = recycler.findViewHolderForAdapterPosition(targetPosition)
             if (vh != null) {
                 vh.itemView.requestFocus()
                 lastFocusedAdapterPosition = targetPosition
                 clearPendingFocusFlags()
-                return@outerPost
+                return@postIfAlive
             }
             recycler.scrollToPosition(targetPosition)
-            recycler.post innerPost@{
-                if (_binding == null) return@innerPost
+            recycler.postIfAlive(isAlive = { _binding != null }) {
                 recycler.findViewHolderForAdapterPosition(targetPosition)?.itemView?.requestFocus() ?: recycler.requestFocus()
                 lastFocusedAdapterPosition = targetPosition
                 clearPendingFocusFlags()
@@ -346,7 +346,7 @@ class LiveAreaIndexFragment : Fragment(), LivePageFocusTarget, LivePageReturnFoc
         if (next >= tabLayout.tabCount) return false
         captureCurrentFocusedAdapterPosition()
         tabLayout.getTabAt(next)?.select() ?: return false
-        tabLayout.post {
+        tabLayout.postIfAttached {
             (parentFragment as? LiveGridTabSwitchFocusHost)?.requestFocusCurrentPageFirstCardFromContentSwitch()
                 ?: tabStrip.getChildAt(next)?.requestFocus()
         }
@@ -363,7 +363,7 @@ class LiveAreaIndexFragment : Fragment(), LivePageFocusTarget, LivePageReturnFoc
         if (prev < 0) return false
         captureCurrentFocusedAdapterPosition()
         tabLayout.getTabAt(prev)?.select() ?: return false
-        tabLayout.post {
+        tabLayout.postIfAttached {
             (parentFragment as? LiveGridTabSwitchFocusHost)?.requestFocusCurrentPageFirstCardFromContentSwitch()
                 ?: tabStrip.getChildAt(prev)?.requestFocus()
         }

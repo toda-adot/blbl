@@ -13,6 +13,7 @@ import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.FocusTreeUtils
+import blbl.cat3399.core.ui.postIfAlive
 import blbl.cat3399.databinding.FragmentVideoGridBinding
 import blbl.cat3399.ui.RefreshKeyHandler
 import kotlinx.coroutines.CancellationException
@@ -120,17 +121,15 @@ class MyFavFoldersFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandl
         }
 
         val recycler = binding.recycler
-        recycler.post outerPost@{
-            if (_binding == null) return@outerPost
+        recycler.postIfAlive(isAlive = { _binding != null }) {
             val vh = recycler.findViewHolderForAdapterPosition(0)
             if (vh != null) {
                 vh.itemView.requestFocus()
                 pendingFocusFirstItemFromTabSwitch = false
-                return@outerPost
+                return@postIfAlive
             }
             recycler.scrollToPosition(0)
-            recycler.post innerPost@{
-                if (_binding == null) return@innerPost
+            recycler.postIfAlive(isAlive = { _binding != null }) {
                 recycler.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() ?: recycler.requestFocus()
                 pendingFocusFirstItemFromTabSwitch = false
             }
@@ -161,7 +160,7 @@ class MyFavFoldersFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandl
                 val folders = BiliApi.favFolders(upMid = mid)
                 if (token != requestToken) return@launch
                 adapter.submit(folders)
-                _binding?.recycler?.post {
+                _binding?.recycler?.postIfAlive(isAlive = { _binding != null }) {
                     maybeConsumePendingFocusFirstItemFromTabSwitch()
                     dpadGridController?.consumePendingFocusAfterLoadMore()
                 }
@@ -181,11 +180,9 @@ class MyFavFoldersFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandl
         if (_binding == null) return
         if (pos < 0 || pos >= adapter.itemCount) return
         val recycler = binding.recycler
-        recycler.post outerPost@{
-            if (_binding == null) return@outerPost
+        recycler.postIfAlive(isAlive = { _binding != null }) {
             recycler.scrollToPosition(pos)
-            recycler.post innerPost@{
-                if (_binding == null) return@innerPost
+            recycler.postIfAlive(isAlive = { _binding != null }) {
                 recycler.findViewHolderForAdapterPosition(pos)?.itemView?.requestFocus()
                 pendingRestorePosition = null
             }

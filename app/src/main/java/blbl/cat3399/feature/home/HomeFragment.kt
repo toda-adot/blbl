@@ -14,6 +14,7 @@ import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.TabSwitchFocusTarget
 import blbl.cat3399.core.ui.enableDpadTabFocus
+import blbl.cat3399.core.ui.postIfAlive
 import blbl.cat3399.databinding.FragmentHomeBinding
 import blbl.cat3399.feature.video.VideoGridTabSwitchFocusHost
 import blbl.cat3399.ui.BackPressHandler
@@ -53,12 +54,11 @@ class HomeFragment : Fragment(), VideoGridTabSwitchFocusHost, BackPressHandler {
             }
         }.attach()
         val tabLayout = binding.tabLayout
-        tabLayout.post {
-            if (_binding == null) return@post
+        tabLayout.postIfAlive(isAlive = { _binding != null }) {
             tabLayout.enableDpadTabFocus(selectOnFocusProvider = { BiliClient.prefs.tabSwitchFollowsFocus }) { position ->
                 AppLog.d("Home", "tab focus pos=$position t=${SystemClock.uptimeMillis()}")
             }
-            val tabStrip = tabLayout.getChildAt(0) as? ViewGroup ?: return@post
+            val tabStrip = tabLayout.getChildAt(0) as? ViewGroup ?: return@postIfAlive
             for (i in 0 until tabStrip.childCount) {
                 tabStrip.getChildAt(i).setOnKeyListener { _, keyCode, event ->
                     if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
@@ -97,7 +97,7 @@ class HomeFragment : Fragment(), VideoGridTabSwitchFocusHost, BackPressHandler {
         if (b.viewPager.hasFocus() && !b.tabLayout.hasFocus()) {
             val tabStrip = b.tabLayout.getChildAt(0) as? ViewGroup ?: return false
             val pos = b.tabLayout.selectedTabPosition.takeIf { it >= 0 } ?: b.viewPager.currentItem
-            b.tabLayout.post { tabStrip.getChildAt(pos)?.requestFocus() }
+            b.tabLayout.postIfAlive(isAlive = { _binding != null }) { tabStrip.getChildAt(pos)?.requestFocus() }
             return true
         }
 

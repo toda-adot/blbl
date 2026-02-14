@@ -14,6 +14,7 @@ import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.model.LiveAreaParent
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.enableDpadTabFocus
+import blbl.cat3399.core.ui.postIfAlive
 import blbl.cat3399.databinding.FragmentLiveBinding
 import blbl.cat3399.ui.BackPressHandler
 import com.google.android.material.tabs.TabLayoutMediator
@@ -95,8 +96,8 @@ class LiveFragment : Fragment(), LiveGridTabSwitchFocusHost, BackPressHandler, L
         if (!pendingRestoreFocusAfterDetailReturn) return
         val b = _binding ?: return
         pendingRestoreFocusAfterDetailReturn = false
-        b.viewPager.post {
-            if (_binding == null) return@post
+        val isUiAlive = { _binding === b && isResumed }
+        b.viewPager.postIfAlive(isAlive = isUiAlive) {
             val page = currentPageFragment()
             val restored = (page as? LivePageReturnFocusTarget)?.restoreFocusAfterReturnFromDetail() == true
             if (!restored) {
@@ -136,20 +137,20 @@ class LiveFragment : Fragment(), LiveGridTabSwitchFocusHost, BackPressHandler, L
         mediator?.detach()
         mediator = null
 
-        binding.viewPager.adapter = LivePagerAdapter(this, list)
+        val b = binding
+        b.viewPager.adapter = LivePagerAdapter(this, list)
         mediator =
-            TabLayoutMediator(binding.tabLayout, binding.viewPager) { tab, position ->
+            TabLayoutMediator(b.tabLayout, b.viewPager) { tab, position ->
                 tab.text = list.getOrNull(position)?.title ?: ""
             }.also { it.attach() }
 
-        val tabLayout = binding.tabLayout
-        tabLayout.post {
-            if (_binding == null) return@post
+        val tabLayout = b.tabLayout
+        tabLayout.postIfAlive(isAlive = { _binding === b }) {
             tabLayout.enableDpadTabFocus(selectOnFocusProvider = { BiliClient.prefs.tabSwitchFollowsFocus }) { position ->
                 val title = list.getOrNull(position)?.title
                 AppLog.d("Live", "tab focus pos=$position title=$title t=${SystemClock.uptimeMillis()}")
             }
-            val tabStrip = tabLayout.getChildAt(0) as? ViewGroup ?: return@post
+            val tabStrip = tabLayout.getChildAt(0) as? ViewGroup ?: return@postIfAlive
             for (i in 0 until tabStrip.childCount) {
                 tabStrip.getChildAt(i).setOnKeyListener { _, keyCode, event ->
                     if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {

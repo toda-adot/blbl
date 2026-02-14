@@ -22,6 +22,8 @@ import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.GridSpanPolicy
 import blbl.cat3399.core.ui.TabSwitchFocusTarget
 import blbl.cat3399.core.ui.UiScale
+import blbl.cat3399.core.ui.postIfAlive
+import blbl.cat3399.core.ui.postIfAttached
 import blbl.cat3399.databinding.FragmentVideoGridBinding
 import blbl.cat3399.feature.following.openUpDetailFromVideoCard
 import blbl.cat3399.feature.player.PlayerPlaylistItem
@@ -291,9 +293,11 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
                     if (applied.items.isNotEmpty()) {
                         if (applied.isRefresh) adapter.submit(applied.items) else adapter.append(applied.items)
                     }
-                    _binding?.recycler?.post {
-                        maybeConsumePendingFocusFirstCard()
-                        dpadGridController?.consumePendingFocusAfterLoadMore()
+                    _binding?.let { b ->
+                        b.recycler.postIfAlive(isAlive = { _binding === b && isResumed }) {
+                            maybeConsumePendingFocusFirstCard()
+                            dpadGridController?.consumePendingFocusAfterLoadMore()
+                        }
                     }
                     AppLog.i(
                         "VideoGrid",
@@ -368,19 +372,19 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
         }
 
         val targetPosition = resolvePendingFocusTarget(itemCount = adapter.itemCount)
-        val recycler = binding.recycler
-        recycler.post outerPost@{
-            if (_binding == null) return@outerPost
+        val b = _binding ?: return false
+        val recycler = b.recycler
+        val isUiAlive = { _binding === b && isResumed }
+        recycler.postIfAlive(isAlive = isUiAlive) {
             val vh = recycler.findViewHolderForAdapterPosition(targetPosition)
             if (vh != null) {
                 vh.itemView.requestFocus()
                 lastFocusedAdapterPosition = targetPosition
                 clearPendingFocusFlags()
-                return@outerPost
+                return@postIfAlive
             }
             recycler.scrollToPosition(targetPosition)
-            recycler.post innerPost@{
-                if (_binding == null) return@innerPost
+            recycler.postIfAlive(isAlive = isUiAlive) {
                 recycler.findViewHolderForAdapterPosition(targetPosition)?.itemView?.requestFocus()
                 lastFocusedAdapterPosition = targetPosition
                 clearPendingFocusFlags()
@@ -436,7 +440,7 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
         if (next >= tabLayout.tabCount) return false
         captureCurrentFocusedAdapterPosition()
         tabLayout.getTabAt(next)?.select() ?: return false
-        tabLayout.post {
+        tabLayout.postIfAttached {
             (parentFragment as? VideoGridTabSwitchFocusHost)?.requestFocusCurrentPageFirstCardFromContentSwitch()
                 ?: tabStrip.getChildAt(next)?.requestFocus()
         }
@@ -453,7 +457,7 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
         if (prev < 0) return false
         captureCurrentFocusedAdapterPosition()
         tabLayout.getTabAt(prev)?.select() ?: return false
-        tabLayout.post {
+        tabLayout.postIfAttached {
             (parentFragment as? VideoGridTabSwitchFocusHost)?.requestFocusCurrentPageFirstCardFromContentSwitch()
                 ?: tabStrip.getChildAt(prev)?.requestFocus()
         }

@@ -13,6 +13,7 @@ import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.model.Zone
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.enableDpadTabFocus
+import blbl.cat3399.core.ui.postIfAlive
 import blbl.cat3399.databinding.FragmentCategoryBinding
 import blbl.cat3399.feature.video.VideoGridFragment
 import blbl.cat3399.feature.video.VideoGridTabSwitchFocusHost
@@ -54,8 +55,7 @@ class CategoryFragment : Fragment(), VideoGridTabSwitchFocusHost, BackPressHandl
             tab.text = zones[position].title
         }.attach()
         val tabLayout = binding.tabLayout
-        tabLayout.post {
-            if (_binding == null) return@post
+        tabLayout.postIfAlive(isAlive = { _binding != null }) {
             tabLayout.enableDpadTabFocus(selectOnFocusProvider = { BiliClient.prefs.tabSwitchFollowsFocus }) { position ->
                 val zone = zones.getOrNull(position)
                 AppLog.d(
@@ -63,7 +63,7 @@ class CategoryFragment : Fragment(), VideoGridTabSwitchFocusHost, BackPressHandl
                     "tab focus pos=$position title=${zone?.title} tid=${zone?.tid} t=${SystemClock.uptimeMillis()}",
                 )
             }
-            val tabStrip = tabLayout.getChildAt(0) as? ViewGroup ?: return@post
+            val tabStrip = tabLayout.getChildAt(0) as? ViewGroup ?: return@postIfAlive
             for (i in 0 until tabStrip.childCount) {
                 tabStrip.getChildAt(i).setOnKeyListener { _, keyCode, event ->
                     if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
