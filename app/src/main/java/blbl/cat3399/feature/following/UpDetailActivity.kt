@@ -90,15 +90,22 @@ class UpDetailActivity : BaseActivity() {
         adapter =
             VideoCardAdapter(
                 onClick = { card, pos ->
+                    val cards = adapter.snapshot()
                     val playlistItems =
-                        adapter.snapshot().map {
+                        cards.map {
                             PlayerPlaylistItem(
                                 bvid = it.bvid,
                                 cid = it.cid,
                                 title = it.title,
                             )
                         }
-                    val token = PlayerPlaylistStore.put(items = playlistItems, index = pos, source = "UpDetail:$mid")
+                    val token =
+                        PlayerPlaylistStore.put(
+                            items = playlistItems,
+                            index = pos,
+                            source = "UpDetail:$mid",
+                            uiCards = cards,
+                        )
                     if (BiliClient.prefs.playerOpenDetailBeforePlay) {
                         startActivity(
                             Intent(this, VideoDetailActivity::class.java)

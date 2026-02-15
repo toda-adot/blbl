@@ -58,8 +58,9 @@ class MyHistoryFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler 
             adapter =
                 VideoCardAdapter(
                     onClick = { card, pos ->
+                        val cards = adapter.snapshot()
                         val playlistItems =
-                            adapter.snapshot().map {
+                            cards.map {
                                 PlayerPlaylistItem(
                                     bvid = it.bvid,
                                     cid = it.cid,
@@ -68,7 +69,13 @@ class MyHistoryFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler 
                                     title = it.title,
                                 )
                             }
-                        val token = PlayerPlaylistStore.put(items = playlistItems, index = pos, source = "MyHistory")
+                        val token =
+                            PlayerPlaylistStore.put(
+                                items = playlistItems,
+                                index = pos,
+                                source = "MyHistory",
+                                uiCards = cards,
+                            )
                         val canOpenDetail =
                             BiliClient.prefs.playerOpenDetailBeforePlay &&
                                 card.bvid.isNotBlank() &&

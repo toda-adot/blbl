@@ -16,6 +16,7 @@ import blbl.cat3399.core.image.ImageLoader
 import blbl.cat3399.core.image.ImageUrl
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.model.BangumiEpisode
+import blbl.cat3399.core.model.VideoCard
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.BackButtonSizingHelper
@@ -559,7 +560,34 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
             playlistItems.indexOfFirst { it.epId == ep.epId }
                 .takeIf { it >= 0 }
                 ?: pos
-        val token = PlayerPlaylistStore.put(items = playlistItems, index = playlistIndex, source = "Bangumi:$seasonId")
+        val playlistCards =
+            currentEpisodes
+                .filter { !it.bvid.isNullOrBlank() }
+                .mapIndexed { index, item ->
+                    VideoCard(
+                        bvid = item.bvid.orEmpty(),
+                        cid = item.cid,
+                        aid = item.aid,
+                        epId = item.epId,
+                        title = item.title.takeIf { it.isNotBlank() } ?: "第${index + 1}集",
+                        coverUrl = item.coverUrl.orEmpty(),
+                        durationSec = 0,
+                        ownerName = "",
+                        ownerFace = null,
+                        ownerMid = null,
+                        view = null,
+                        danmaku = null,
+                        pubDate = null,
+                        pubDateText = null,
+                    )
+                }
+        val token =
+            PlayerPlaylistStore.put(
+                items = playlistItems,
+                index = playlistIndex,
+                source = "Bangumi:$seasonId",
+                uiCards = playlistCards,
+            )
         startActivity(
             Intent(requireContext(), PlayerActivity::class.java)
                 .putExtra(PlayerActivity.EXTRA_BVID, bvid)

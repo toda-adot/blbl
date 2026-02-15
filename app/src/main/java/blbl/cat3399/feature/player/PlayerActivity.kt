@@ -186,10 +186,19 @@ class PlayerActivity : BaseActivity() {
     internal var playlistToken: String? = null
     internal var playlistSource: String? = null
     internal var playlistItems: List<PlayerPlaylistItem> = emptyList()
+    internal var playlistUiCards: List<VideoCard> = emptyList()
     internal var playlistIndex: Int = -1
     internal var playlistUgcSeasonId: Long? = null
     internal var playlistUgcSeasonTitle: String? = null
     internal lateinit var session: PlayerSessionSettings
+
+    internal enum class BottomCardPanelMode {
+        Recommend,
+        Playlist,
+    }
+
+    internal var bottomCardPanelMode: BottomCardPanelMode = BottomCardPanelMode.Recommend
+    internal var bottomCardPanelRestoreFocus: WeakReference<View>? = null
 
     internal data class RelatedVideosCache(
         val bvid: String,
@@ -591,9 +600,14 @@ class PlayerActivity : BaseActivity() {
             if (p != null && p.items.isNotEmpty()) {
                 playlistSource = p.source
                 playlistItems = p.items
+                playlistUiCards =
+                    p.uiCards.takeIf { it.isNotEmpty() && it.size == p.items.size }
+                        ?: emptyList()
                 val idx = playlistIndex.takeIf { it in playlistItems.indices } ?: p.index
                 playlistIndex = idx.coerceIn(0, playlistItems.lastIndex)
                 PlayerPlaylistStore.updateIndex(token, playlistIndex)
+            } else {
+                playlistUiCards = emptyList()
             }
         }
         if (epIdExtra != null) {
@@ -809,7 +823,7 @@ class PlayerActivity : BaseActivity() {
         refreshSettings(settingsAdapter)
         updateDebugOverlay()
         initSidePanels()
-        initRecommendPanel()
+        initBottomCardPanel()
 
         initControls(exo)
         applyActionButtonsVisibility()
@@ -1075,7 +1089,7 @@ class PlayerActivity : BaseActivity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val keyCode = event.keyCode
 
-        if (isRecommendPanelVisible()) {
+        if (isBottomCardPanelVisible()) {
             val focused = currentFocus
             val focusInPanel = focused != null && FocusTreeUtils.isDescendantOf(focused, binding.recommendPanel)
 
@@ -1107,7 +1121,7 @@ class PlayerActivity : BaseActivity() {
                 -> {
                     if (event.action == KeyEvent.ACTION_DOWN && isInteractionKey(keyCode)) noteUserInteraction()
                     if (!focusInPanel) {
-                        ensureRecommendPanelFocus()
+                        ensureBottomCardPanelFocus()
                         return true
                     }
                     return super.dispatchKeyEvent(event)

@@ -1,6 +1,7 @@
 package blbl.cat3399.feature.player
 
 import blbl.cat3399.core.log.AppLog
+import blbl.cat3399.core.model.VideoCard
 import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -104,6 +105,7 @@ internal fun isMultiPagePlaylist(list: List<PlayerPlaylistItem>, currentBvid: St
 
 data class PlayerPlaylist(
     val items: List<PlayerPlaylistItem>,
+    val uiCards: List<VideoCard>,
     val source: String?,
     val createdAtMs: Long,
     var index: Int,
@@ -116,13 +118,56 @@ object PlayerPlaylistStore {
     private val order = ArrayDeque<String>()
     private val lock = Any()
 
-    fun put(items: List<PlayerPlaylistItem>, index: Int, source: String? = null): String {
-        val sanitized = items.filter { it.bvid.isNotBlank() }
-        val safeIndex = index.coerceIn(0, (sanitized.size - 1).coerceAtLeast(0))
+    fun put(
+        items: List<PlayerPlaylistItem>,
+        index: Int,
+        source: String? = null,
+        uiCards: List<VideoCard> = emptyList(),
+    ): String {
+        val outItems = ArrayList<PlayerPlaylistItem>(items.size)
+        val outCards = ArrayList<VideoCard>(items.size)
+        val hasCards = uiCards.isNotEmpty()
+
+        for (i in items.indices) {
+            val item = items[i]
+            if (item.bvid.isBlank()) continue
+            outItems.add(item)
+            if (hasCards) {
+                val card = uiCards.getOrNull(i)
+                if (card != null) {
+                    outCards.add(card)
+                } else {
+                    val fallbackTitle =
+                        item.title?.trim()?.takeIf { it.isNotBlank() }
+                            ?: "视频 ${outItems.size}"
+                    outCards.add(
+                        VideoCard(
+                            bvid = item.bvid,
+                            cid = item.cid,
+                            aid = item.aid,
+                            epId = item.epId,
+                            title = fallbackTitle,
+                            coverUrl = "",
+                            durationSec = 0,
+                            ownerName = "",
+                            ownerFace = null,
+                            ownerMid = null,
+                            view = null,
+                            danmaku = null,
+                            pubDate = null,
+                            pubDateText = null,
+                        ),
+                    )
+                }
+            }
+        }
+
+        val safeIndex = index.coerceIn(0, (outItems.size - 1).coerceAtLeast(0))
         val token = UUID.randomUUID().toString()
         val playlist =
             PlayerPlaylist(
-                items = sanitized,
+                items = outItems,
+                uiCards = if (hasCards) outCards else emptyList(),
                 source = source,
                 createdAtMs = System.currentTimeMillis(),
                 index = safeIndex,
@@ -132,7 +177,10 @@ object PlayerPlaylistStore {
             order.addLast(token)
             trimLocked()
         }
-        AppLog.d("PlayerPlaylistStore", "put size=${sanitized.size} idx=$safeIndex source=${source.orEmpty()} token=${token.take(8)}")
+        AppLog.d(
+            "PlayerPlaylistStore",
+            "put size=${outItems.size} cards=${if (hasCards) outCards.size else 0} idx=$safeIndex source=${source.orEmpty()} token=${token.take(8)}",
+        )
         return token
     }
 

@@ -138,15 +138,22 @@ class SearchRenderer(
         videoAdapter =
             VideoCardAdapter(
                 onClick = { card, pos ->
+                    val cards = videoAdapter.snapshot()
                     val playlistItems =
-                        videoAdapter.snapshot().map {
+                        cards.map {
                             PlayerPlaylistItem(
                                 bvid = it.bvid,
                                 cid = it.cid,
                                 title = it.title,
                             )
                         }
-                    val token = PlayerPlaylistStore.put(items = playlistItems, index = pos, source = "Search")
+                    val token =
+                        PlayerPlaylistStore.put(
+                            items = playlistItems,
+                            index = pos,
+                            source = "Search",
+                            uiCards = cards,
+                        )
                     if (BiliClient.prefs.playerOpenDetailBeforePlay) {
                         fragment.startActivity(
                             Intent(viewContext, VideoDetailActivity::class.java)

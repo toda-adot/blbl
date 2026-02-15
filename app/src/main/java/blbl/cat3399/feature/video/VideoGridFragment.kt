@@ -72,15 +72,22 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
                 VideoCardAdapter(
                     onClick = { card, pos ->
                         AppLog.i("VideoGrid", "click bvid=${card.bvid} cid=${card.cid}")
+                        val cards = adapter.snapshot()
                         val playlistItems =
-                            adapter.snapshot().map {
+                            cards.map {
                                 PlayerPlaylistItem(
                                     bvid = it.bvid,
                                     cid = it.cid,
                                     title = it.title,
                                 )
                             }
-                        val token = PlayerPlaylistStore.put(items = playlistItems, index = pos, source = "VideoGrid:$source/$rid")
+                        val token =
+                            PlayerPlaylistStore.put(
+                                items = playlistItems,
+                                index = pos,
+                                source = "VideoGrid:$source/$rid",
+                                uiCards = cards,
+                            )
                         if (BiliClient.prefs.playerOpenDetailBeforePlay) {
                             startActivity(
                                 Intent(requireContext(), VideoDetailActivity::class.java)

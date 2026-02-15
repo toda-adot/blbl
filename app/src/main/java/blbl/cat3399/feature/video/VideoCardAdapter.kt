@@ -20,6 +20,7 @@ class VideoCardAdapter(
     private val onLongClick: ((VideoCard, Int) -> Boolean)? = null,
     private val fixedItemWidthTvDimen: Int? = null,
     private val fixedItemMarginTvDimen: Int? = null,
+    private val stableIdKey: ((VideoCard) -> String)? = null,
 ) : RecyclerView.Adapter<VideoCardAdapter.Vh>() {
     private val items = ArrayList<VideoCard>()
 
@@ -47,7 +48,11 @@ class VideoCardAdapter(
 
     fun snapshot(): List<VideoCard> = items.toList()
 
-    override fun getItemId(position: Int): Long = items[position].stableKey().hashCode().toLong()
+    override fun getItemId(position: Int): Long {
+        val item = items[position]
+        val key = stableIdKey?.invoke(item) ?: item.stableKey()
+        return key.hashCode().toLong()
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Vh {
         val binding = ItemVideoCardBinding.inflate(LayoutInflater.from(parent.context), parent, false)

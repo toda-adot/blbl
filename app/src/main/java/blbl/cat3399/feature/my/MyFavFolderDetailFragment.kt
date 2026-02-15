@@ -62,15 +62,22 @@ class MyFavFolderDetailFragment : Fragment(), RefreshKeyHandler {
             adapter =
                 VideoCardAdapter(
                     onClick = { card, pos ->
+                        val cards = adapter.snapshot()
                         val playlistItems =
-                            adapter.snapshot().map {
+                            cards.map {
                                 PlayerPlaylistItem(
                                     bvid = it.bvid,
                                     cid = it.cid,
                                     title = it.title,
                                 )
                             }
-                        val token = PlayerPlaylistStore.put(items = playlistItems, index = pos, source = "MyFavFolderDetail:$mediaId")
+                        val token =
+                            PlayerPlaylistStore.put(
+                                items = playlistItems,
+                                index = pos,
+                                source = "MyFavFolderDetail:$mediaId",
+                                uiCards = cards,
+                            )
                         if (BiliClient.prefs.playerOpenDetailBeforePlay) {
                             startActivity(
                                 Intent(requireContext(), VideoDetailActivity::class.java)

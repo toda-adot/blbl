@@ -10,34 +10,53 @@ import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.postIfAlive
 import blbl.cat3399.feature.video.VideoCardAdapter
 
-internal fun PlayerActivity.isRecommendPanelVisible(): Boolean = binding.recommendPanel.visibility == View.VISIBLE
+internal fun PlayerActivity.isBottomCardPanelVisible(): Boolean = binding.recommendPanel.visibility == View.VISIBLE
 
-internal fun PlayerActivity.initRecommendPanel() {
-    binding.recommendScrim.setOnClickListener { hideRecommendPanel(restoreFocus = true) }
-    binding.recommendPanel.setOnClickListener { hideRecommendPanel(restoreFocus = true) }
+// Backwards-compatible alias (older call sites).
+internal fun PlayerActivity.isRecommendPanelVisible(): Boolean = isBottomCardPanelVisible()
+
+internal fun PlayerActivity.initBottomCardPanel() {
+    binding.recommendScrim.setOnClickListener { hideBottomCardPanel(restoreFocus = true) }
+    binding.recommendPanel.setOnClickListener { hideBottomCardPanel(restoreFocus = true) }
 
     binding.recyclerRecommend.layoutManager =
         LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
     binding.recyclerRecommend.itemAnimator = null
     binding.recyclerRecommend.adapter =
         VideoCardAdapter(
-            onClick = { card, _ ->
-                playRecommendPanelCard(card)
+            onClick = { card, pos ->
+                when (bottomCardPanelMode) {
+                    PlayerActivity.BottomCardPanelMode.Recommend -> playBottomPanelRecommendCard(card)
+                    PlayerActivity.BottomCardPanelMode.Playlist -> playBottomPanelPlaylistIndex(pos)
+                }
             },
             onLongClick = null,
             fixedItemWidthTvDimen = R.dimen.player_recommend_card_width_tv,
             fixedItemMarginTvDimen = R.dimen.player_recommend_card_margin_tv,
+            stableIdKey = { card ->
+                buildString {
+                    append(card.bvid)
+                    append('|')
+                    append(card.cid ?: -1L)
+                    append('|')
+                    append(card.aid ?: -1L)
+                    append('|')
+                    append(card.epId ?: -1L)
+                    append('|')
+                    append(card.title)
+                }
+            },
         )
 
     binding.recyclerRecommend.addOnChildAttachStateChangeListener(
         object : RecyclerView.OnChildAttachStateChangeListener {
             override fun onChildViewAttachedToWindow(view: View) {
                 view.setOnKeyListener { v, keyCode, event ->
-                    if (!isRecommendPanelVisible()) return@setOnKeyListener false
+                    if (!isBottomCardPanelVisible()) return@setOnKeyListener false
                     if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
                     when (keyCode) {
                         KeyEvent.KEYCODE_DPAD_UP -> {
-                            hideRecommendPanel(restoreFocus = true)
+                            hideBottomCardPanel(restoreFocus = true)
                             true
                         }
                         KeyEvent.KEYCODE_DPAD_DOWN -> {
@@ -54,7 +73,7 @@ internal fun PlayerActivity.initRecommendPanel() {
                                     }
 
                             if (pos <= 0) return@setOnKeyListener true
-                            focusRecommendPosition(pos - 1)
+                            focusBottomPanelPosition(pos - 1)
                             true
                         }
                         KeyEvent.KEYCODE_DPAD_RIGHT -> {
@@ -68,7 +87,7 @@ internal fun PlayerActivity.initRecommendPanel() {
                                     }
 
                             if (pos >= last) return@setOnKeyListener true
-                            focusRecommendPosition(pos + 1)
+                            focusBottomPanelPosition(pos + 1)
                             true
                         }
                         else -> false
@@ -83,31 +102,78 @@ internal fun PlayerActivity.initRecommendPanel() {
     )
 }
 
+// Backwards-compatible alias (older call sites).
+internal fun PlayerActivity.initRecommendPanel() = initBottomCardPanel()
+
 internal fun PlayerActivity.showRecommendPanel(items: List<VideoCard>) {
+    showBottomCardPanel(
+        mode = PlayerActivity.BottomCardPanelMode.Recommend,
+        items = items,
+        focusIndex = 0,
+        restoreFocusView = binding.btnRecommend,
+    )
+}
+
+internal fun PlayerActivity.showPlaylistPanel() {
+    val list = playlistItems
+    if (list.isEmpty() || playlistIndex !in list.indices) return
+    val cards = resolvePlaylistUiCardsForBottomPanel()
+    val focusIndex = playlistIndex.coerceIn(0, (cards.size - 1).coerceAtLeast(0))
+    showBottomCardPanel(
+        mode = PlayerActivity.BottomCardPanelMode.Playlist,
+        items = cards,
+        focusIndex = focusIndex,
+        restoreFocusView = binding.btnPlaylist,
+    )
+}
+
+internal fun PlayerActivity.showBottomCardPanel(
+    mode: PlayerActivity.BottomCardPanelMode,
+    items: List<VideoCard>,
+    focusIndex: Int,
+    restoreFocusView: View,
+) {
     if (items.isEmpty()) return
     setControlsVisible(true)
+    bottomCardPanelMode = mode
+    bottomCardPanelRestoreFocus = java.lang.ref.WeakReference(restoreFocusView)
     (binding.recyclerRecommend.adapter as? VideoCardAdapter)?.submit(items)
     binding.recommendScrim.visibility = View.VISIBLE
     binding.recommendPanel.visibility = View.VISIBLE
-    binding.recyclerRecommend.scrollToPosition(0)
-    binding.recyclerRecommend.post { focusRecommendPosition(0) }
+    binding.recyclerRecommend.scrollToPosition(focusIndex)
+    binding.recyclerRecommend.post { focusBottomPanelPosition(focusIndex) }
 }
 
-internal fun PlayerActivity.hideRecommendPanel(restoreFocus: Boolean) {
-    if (!isRecommendPanelVisible() && binding.recommendScrim.visibility != View.VISIBLE) return
+internal fun PlayerActivity.hideBottomCardPanel(restoreFocus: Boolean) {
+    if (!isBottomCardPanelVisible() && binding.recommendScrim.visibility != View.VISIBLE) return
     binding.recommendScrim.visibility = View.GONE
     binding.recommendPanel.visibility = View.GONE
     (binding.recyclerRecommend.adapter as? VideoCardAdapter)?.submit(emptyList())
-    if (restoreFocus) {
-        setControlsVisible(true)
-        binding.btnRecommend.post { binding.btnRecommend.requestFocus() }
+    if (!restoreFocus) return
+
+    setControlsVisible(true)
+    val target = bottomCardPanelRestoreFocus?.get()
+    if (target != null) {
+        target.post { target.requestFocus() }
+        return
+    }
+    // Conservative fallbacks.
+    binding.btnPlaylist.post {
+        if (binding.btnPlaylist.isShown && binding.btnPlaylist.isEnabled) {
+            binding.btnPlaylist.requestFocus()
+        } else {
+            binding.btnRecommend.requestFocus()
+        }
     }
 }
 
-private fun PlayerActivity.playRecommendPanelCard(card: VideoCard) {
+// Backwards-compatible alias (older call sites).
+internal fun PlayerActivity.hideRecommendPanel(restoreFocus: Boolean) = hideBottomCardPanel(restoreFocus = restoreFocus)
+
+private fun PlayerActivity.playBottomPanelRecommendCard(card: VideoCard) {
     val bvid = card.bvid.trim()
     if (bvid.isBlank()) return
-    hideRecommendPanel(restoreFocus = false)
+    hideBottomCardPanel(restoreFocus = false)
     startPlayback(
         bvid = bvid,
         cidExtra = card.cid?.takeIf { it > 0 },
@@ -119,15 +185,60 @@ private fun PlayerActivity.playRecommendPanelCard(card: VideoCard) {
     binding.btnRecommend.post { binding.btnRecommend.requestFocus() }
 }
 
-internal fun PlayerActivity.ensureRecommendPanelFocus() {
-    if (!isRecommendPanelVisible()) return
+private fun PlayerActivity.playBottomPanelPlaylistIndex(index: Int) {
+    val list = playlistItems
+    if (list.isEmpty() || index !in list.indices) return
+    hideBottomCardPanel(restoreFocus = false)
+    playPlaylistIndex(index)
+    setControlsVisible(true)
+    binding.btnPlaylist.post { binding.btnPlaylist.requestFocus() }
+}
+
+internal fun PlayerActivity.ensureBottomCardPanelFocus() {
+    if (!isBottomCardPanelVisible()) return
     val focused = currentFocus
     val inPanel = focused != null && FocusTreeUtils.isDescendantOf(focused, binding.recommendPanel)
     if (inPanel) return
-    binding.recyclerRecommend.post { focusRecommendPosition(0) }
+    val defaultPos =
+        when (bottomCardPanelMode) {
+            PlayerActivity.BottomCardPanelMode.Recommend -> 0
+            PlayerActivity.BottomCardPanelMode.Playlist -> playlistIndex.coerceAtLeast(0)
+        }
+    binding.recyclerRecommend.post { focusBottomPanelPosition(defaultPos) }
 }
 
-private fun PlayerActivity.focusRecommendPosition(position: Int) {
+// Backwards-compatible alias (older call sites).
+internal fun PlayerActivity.ensureRecommendPanelFocus() = ensureBottomCardPanelFocus()
+
+private fun PlayerActivity.resolvePlaylistUiCardsForBottomPanel(): List<VideoCard> {
+    val list = playlistItems
+    if (list.isEmpty()) return emptyList()
+    val cards = playlistUiCards
+    if (cards.isNotEmpty() && cards.size == list.size) return cards
+    return list.mapIndexed { index, item ->
+        val title =
+            item.title?.trim()?.takeIf { it.isNotBlank() }
+                ?: "视频 ${index + 1}"
+        VideoCard(
+            bvid = item.bvid,
+            cid = item.cid,
+            aid = item.aid,
+            epId = item.epId,
+            title = title,
+            coverUrl = "",
+            durationSec = 0,
+            ownerName = "",
+            ownerFace = null,
+            ownerMid = null,
+            view = null,
+            danmaku = null,
+            pubDate = null,
+            pubDateText = null,
+        )
+    }
+}
+
+private fun PlayerActivity.focusBottomPanelPosition(position: Int) {
     val adapter = binding.recyclerRecommend.adapter ?: return
     val count = adapter.itemCount
     if (position !in 0 until count) return
@@ -136,7 +247,7 @@ private fun PlayerActivity.focusRecommendPosition(position: Int) {
         ?: run {
             binding.recyclerRecommend.scrollToPosition(position)
             binding.recyclerRecommend.postIfAlive(
-                isAlive = { isRecommendPanelVisible() && binding.recyclerRecommend.isAttachedToWindow },
+                isAlive = { isBottomCardPanelVisible() && binding.recyclerRecommend.isAttachedToWindow },
             ) {
                 binding.recyclerRecommend.findViewHolderForAdapterPosition(position)?.itemView?.requestFocus()
             }

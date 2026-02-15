@@ -327,25 +327,7 @@ internal fun PlayerActivity.showPlaylistDialog() {
         AppToast.show(this, "暂无播放列表")
         return
     }
-
-    val title =
-        playlistUgcSeasonTitle?.let { "合集：$it" }
-            ?: if (isMultiPagePlaylist(list, currentBvid)) "分P" else "播放列表"
-    val labels =
-        list.mapIndexed { index, item ->
-            item.title?.trim()?.takeIf { it.isNotBlank() }
-                ?: "视频 ${index + 1}"
-        }
-
-    SingleChoiceDialog.show(
-        context = this,
-        title = title,
-        items = labels,
-        checkedIndex = playlistIndex,
-        negativeText = "关闭",
-    ) { which, _ ->
-        if (which != playlistIndex) playPlaylistIndex(which)
-    }
+    showPlaylistPanel()
 }
 
 internal fun PlayerActivity.showRecommendDialog() {

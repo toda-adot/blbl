@@ -132,15 +132,22 @@ class DynamicFragment : Fragment(), RefreshKeyHandler {
         videoAdapter =
             VideoCardAdapter(
                 onClick = { card, pos ->
+                    val cards = videoAdapter.snapshot()
                     val playlistItems =
-                        videoAdapter.snapshot().map {
+                        cards.map {
                             PlayerPlaylistItem(
                                 bvid = it.bvid,
                                 cid = it.cid,
                                 title = it.title,
                             )
-                    }
-                    val token = PlayerPlaylistStore.put(items = playlistItems, index = pos, source = "Dynamic")
+                        }
+                    val token =
+                        PlayerPlaylistStore.put(
+                            items = playlistItems,
+                            index = pos,
+                            source = "Dynamic",
+                            uiCards = cards,
+                        )
                     if (BiliClient.prefs.playerOpenDetailBeforePlay) {
                         startActivity(
                             Intent(requireContext(), VideoDetailActivity::class.java)
