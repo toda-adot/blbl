@@ -22,8 +22,8 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
 
 object TestApkUpdater {
-    private const val DEBUG_APK_URL = "http://8.152.215.14:13901/app-debug.apk"
-    private const val RELEASE_APK_URL = "http://8.152.215.14:13901/app-release.apk"
+    private const val DEBUG_APK_URL = "https://cat3399.top/blbl/blbl-latest-debug.apk"
+    private const val RELEASE_APK_URL = "https://cat3399.top/blbl/blbl-latest-release.apk"
     val TEST_APK_URL: String
         get() = if (BuildConfig.DEBUG) DEBUG_APK_URL else RELEASE_APK_URL
     val TEST_APK_VERSION_URL: String
