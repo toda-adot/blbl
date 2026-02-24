@@ -5,6 +5,9 @@
     <item name="tag_emote_text_key" type="id" />
     <item name="tag_app_toast_view" type="id" />
     <item name="tag_app_toast_hide_runnable" type="id" />
+    <item name="tag_popup_host" type="id" />
+    <item name="tag_popup_notice_view" type="id" />
+    <item name="tag_popup_notice_hide_runnable" type="id" />
     <item name="tag_player_list_panel_base_metrics" type="id" />
     <item name="tag_player_side_panels_base_metrics" type="id" />
     <item name="tag_tab_text_scale_fix_pending" type="id" />

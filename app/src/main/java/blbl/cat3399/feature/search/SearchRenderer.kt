@@ -23,6 +23,7 @@ import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.GridSpanPolicy
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.core.ui.enableDpadTabFocus
+import blbl.cat3399.core.ui.popup.AppPopup
 import blbl.cat3399.core.ui.postIfAlive
 import blbl.cat3399.core.ui.uiScaler
 import blbl.cat3399.databinding.FragmentSearchBinding
@@ -109,7 +110,7 @@ class SearchRenderer(
             }
 
             if (following.isLive && following.liveRoomId > 0L) {
-                blbl.cat3399.core.ui.SingleChoiceDialog.show(
+                AppPopup.singleChoice(
                     context = viewContext,
                     title = viewContext.getString(R.string.search_user_live_actions_title, following.name),
                     items =
@@ -118,7 +119,6 @@ class SearchRenderer(
                             viewContext.getString(R.string.search_user_action_open_profile),
                         ),
                     checkedIndex = 0,
-                    negativeText = viewContext.getString(android.R.string.cancel),
                 ) { which, _ ->
                     when (which) {
                         0 -> openLive()

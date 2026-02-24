@@ -61,13 +61,12 @@ import blbl.cat3399.core.ui.DoubleBackToExitHandler
 import blbl.cat3399.core.ui.FocusReturn
 import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.Immersive
-import blbl.cat3399.core.ui.SingleChoiceDialog
+import blbl.cat3399.core.ui.popup.PopupHost
 import blbl.cat3399.core.util.Format as BlblFormat
 import blbl.cat3399.feature.following.UpDetailActivity
 import blbl.cat3399.feature.player.danmaku.DanmakuSessionSettings
 import blbl.cat3399.feature.settings.SettingsActivity
 import blbl.cat3399.databinding.ActivityPlayerBinding
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -1063,6 +1062,19 @@ class PlayerActivity : BaseActivity() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val keyCode = event.keyCode
+
+        // PlayerActivity has extensive global key shortcuts (including BACK/LEFT-as-back).
+        // When a modal popup is showing, bypass these shortcuts and let the popup consume keys first.
+        val popupHost = PopupHost.peek(this)
+        if (popupHost != null) {
+            if (popupHost.consumeBackLikeKeyEventIfNeeded(event)) {
+                finishOnBackKeyUp = false
+                return true
+            }
+            if (popupHost.hasModalView()) {
+                return super.dispatchKeyEvent(event)
+            }
+        }
 
         if (isBottomCardPanelVisible()) {
             val focused = currentFocus

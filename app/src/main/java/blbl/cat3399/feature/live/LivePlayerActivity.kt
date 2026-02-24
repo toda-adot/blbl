@@ -6,7 +6,9 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.util.TypedValue
 import android.view.KeyEvent
+import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
 import android.view.ViewGroup.MarginLayoutParams
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -28,14 +30,16 @@ import blbl.cat3399.core.ui.BaseActivity
 import blbl.cat3399.core.ui.DoubleBackToExitHandler
 import blbl.cat3399.core.ui.FocusReturn
 import blbl.cat3399.core.ui.Immersive
-import blbl.cat3399.core.ui.SingleChoiceDialog
+import blbl.cat3399.core.ui.popup.AppPopup
+import blbl.cat3399.core.ui.popup.PopupAction
+import blbl.cat3399.core.ui.popup.PopupActionRole
+import blbl.cat3399.core.ui.popup.PopupHost
 import blbl.cat3399.databinding.ActivityPlayerBinding
 import blbl.cat3399.databinding.DialogLiveChatBinding
 import blbl.cat3399.feature.player.PlayerOsdSizing
 import blbl.cat3399.feature.player.PlayerSettingsAdapter
 import blbl.cat3399.feature.player.PlayerUiMode
 import blbl.cat3399.feature.player.danmaku.DanmakuSessionSettings
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -239,6 +243,19 @@ class LivePlayerActivity : BaseActivity() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val keyCode = event.keyCode
+
+        // LivePlayerActivity uses global exit shortcuts (BACK/ESC/B).
+        // When a modal popup is showing, bypass these shortcuts and let the popup consume keys first.
+        val popupHost = PopupHost.peek(this)
+        if (popupHost != null) {
+            if (popupHost.consumeBackLikeKeyEventIfNeeded(event)) {
+                finishOnBackKeyUp = false
+                return true
+            }
+            if (popupHost.hasModalView()) {
+                return super.dispatchKeyEvent(event)
+            }
+        }
 
         if (event.action == KeyEvent.ACTION_UP) {
             if (isExitKey(keyCode)) {
@@ -711,14 +728,13 @@ class LivePlayerActivity : BaseActivity() {
             optionsAvailable.indexOf(current).takeIf { it >= 0 }
                 ?: optionsAvailable.indexOf(LIVE_QN_ORIGINAL).takeIf { it >= 0 }
                 ?: 0
-        SingleChoiceDialog.show(
+        AppPopup.singleChoice(
             context = this,
             title = "清晰度",
             items = options,
             checkedIndex = checked,
-            negativeText = "取消",
         ) { which, _ ->
-            val picked = optionsAvailable.getOrNull(which) ?: return@show
+            val picked = optionsAvailable.getOrNull(which) ?: return@singleChoice
             session = session.copy(targetQn = picked)
             session = session.copy(lineOrder = 1) // reset line
             refreshSettings()
@@ -738,14 +754,13 @@ class LivePlayerActivity : BaseActivity() {
         }
         val options = lines.map { "线路 ${it.order}" }
         val checked = (session.lineOrder - 1).coerceIn(0, lines.size - 1)
-        SingleChoiceDialog.show(
+        AppPopup.singleChoice(
             context = this,
             title = "线路",
             items = options,
             checkedIndex = checked,
-            negativeText = "取消",
         ) { which, _ ->
-            val picked = lines.getOrNull(which) ?: return@show
+            val picked = lines.getOrNull(which) ?: return@singleChoice
             session = session.copy(lineOrder = picked.order)
             refreshSettings()
             lifecycleScope.launch { loadAndPlay(initial = false) }
@@ -753,17 +768,37 @@ class LivePlayerActivity : BaseActivity() {
     }
 
     private fun showChatDialog() {
-        val dialogBinding = DialogLiveChatBinding.inflate(layoutInflater)
-        val adapter = LiveChatAdapter()
-        dialogBinding.recycler.adapter = adapter
-        dialogBinding.recycler.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this)
-        adapter.submit(chatItems.toList().asReversed())
-        MaterialAlertDialogBuilder(this)
-            .setTitle("弹幕 / SC")
-            .setView(dialogBinding.root)
-            .setPositiveButton("关闭", null)
-            .show()
+        AppPopup.custom(
+            context = this,
+            title = "弹幕 / SC",
+            cancelable = true,
+            actions = listOf(PopupAction(role = PopupActionRole.POSITIVE, text = "关闭")),
+            preferredActionRole = PopupActionRole.POSITIVE,
+            content = { dialogContext ->
+                val dialogBinding = DialogLiveChatBinding.inflate(LayoutInflater.from(dialogContext))
+                val adapter = LiveChatAdapter()
+                dialogBinding.recycler.adapter = adapter
+                dialogBinding.recycler.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(dialogContext)
+                adapter.submit(chatItems.toList().asReversed())
+
+                val dm = dialogContext.resources.displayMetrics
+                val maxHeightPx =
+                    (dm.heightPixels * 0.60f)
+                        .toInt()
+                        .coerceAtLeast(dp(dialogContext, 220f))
+                        .coerceAtMost(dp(dialogContext, 520f))
+                dialogBinding.recycler.layoutParams =
+                    dialogBinding.recycler.layoutParams
+                        ?: ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                dialogBinding.recycler.layoutParams.height = maxHeightPx
+
+                dialogBinding.root
+            },
+        )
     }
+
+    private fun dp(context: android.content.Context, value: Float): Int =
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value, context.resources.displayMetrics).toInt()
 
     private fun updatePlayPauseIcon(isPlaying: Boolean) {
         val icon = if (isPlaying) blbl.cat3399.R.drawable.ic_player_pause else blbl.cat3399.R.drawable.ic_player_play

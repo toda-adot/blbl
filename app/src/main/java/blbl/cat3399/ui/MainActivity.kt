@@ -9,7 +9,6 @@ import android.view.ViewGroup
 import android.view.ViewGroup.MarginLayoutParams
 import android.view.ViewTreeObserver
 import androidx.activity.OnBackPressedCallback
-import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.lifecycleScope
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
@@ -30,6 +29,8 @@ import blbl.cat3399.core.ui.FocusReturn
 import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.core.ui.cloneInUserScale
+import blbl.cat3399.core.ui.popup.AppPopup
+import blbl.cat3399.core.ui.popup.PopupHandle
 import blbl.cat3399.databinding.ActivityMainBinding
 import blbl.cat3399.databinding.DialogUserInfoBinding
 import blbl.cat3399.feature.category.CategoryFragment
@@ -44,7 +45,6 @@ import blbl.cat3399.feature.my.MyTabContentSwitchFocusHost
 import blbl.cat3399.feature.search.SearchFragment
 import blbl.cat3399.feature.settings.SettingsActivity
 import blbl.cat3399.feature.video.VideoGridTabSwitchFocusHost
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -60,8 +60,8 @@ class MainActivity : BaseActivity() {
     private var pausedFocusedView: WeakReference<View>? = null
     private var pausedFocusWasInMain: Boolean = false
     private var focusListener: ViewTreeObserver.OnGlobalFocusChangeListener? = null
-    private var disclaimerDialog: AlertDialog? = null
-    private var crashPromptDialog: AlertDialog? = null
+    private var disclaimerPopup: PopupHandle? = null
+    private var crashPromptPopup: PopupHandle? = null
     private lateinit var userInfoOverlay: DialogUserInfoBinding
     private val userInfoReturnFocus = FocusReturn()
     private var userInfoLoadJob: Job? = null
@@ -418,10 +418,13 @@ class MainActivity : BaseActivity() {
     }
 
     private fun showLogoutConfirm() {
-        MaterialAlertDialogBuilder(this)
-            .setTitle("退出登录")
-            .setMessage("将清除 Cookie（SESSDATA 等），需要重新登录。确定继续吗？")
-            .setPositiveButton("确定退出") { _, _ ->
+        AppPopup.confirm(
+            context = this,
+            title = "退出登录",
+            message = "将清除 Cookie（SESSDATA 等），需要重新登录。确定继续吗？",
+            positiveText = "确定退出",
+            negativeText = "取消",
+            onPositive = {
                 BiliClient.cookies.clearAll()
                 BiliClient.prefs.webRefreshToken = null
                 BiliClient.prefs.webCookieRefreshCheckedEpochDay = -1L
@@ -429,9 +432,8 @@ class MainActivity : BaseActivity() {
                 AppToast.show(this, "已退出登录")
                 hideUserInfoOverlay()
                 refreshSidebarUser()
-            }
-            .setNegativeButton("取消", null)
-            .show()
+            },
+        )
     }
 
     private fun parseCoins(data: JSONObject?): Double {
@@ -482,50 +484,44 @@ class MainActivity : BaseActivity() {
 
     private fun showFirstLaunchDisclaimerIfNeeded() {
         if (BiliClient.prefs.disclaimerAccepted) return
-        if (disclaimerDialog?.isShowing == true) return
+        if (disclaimerPopup?.isShowing == true) return
 
-        val dialog =
-            MaterialAlertDialogBuilder(this)
-                .setTitle(getString(R.string.disclaimer_title))
-                .setMessage(getString(R.string.disclaimer_message))
-                .setCancelable(false)
-                .setNegativeButton(getString(R.string.disclaimer_exit)) { _, _ -> finish() }
-                .setPositiveButton(getString(R.string.disclaimer_accept)) { _, _ ->
-                    BiliClient.prefs.disclaimerAccepted = true
-                }
-                .create()
-        dialog.setOnDismissListener {
-            disclaimerDialog = null
-            if (!BiliClient.prefs.disclaimerAccepted && !isChangingConfigurations) finish()
-        }
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.requestFocus()
-        }
-        dialog.show()
-        disclaimerDialog = dialog
+        disclaimerPopup =
+            AppPopup.confirm(
+                context = this,
+                title = getString(R.string.disclaimer_title),
+                message = getString(R.string.disclaimer_message),
+                positiveText = getString(R.string.disclaimer_accept),
+                negativeText = getString(R.string.disclaimer_exit),
+                cancelable = false,
+                onPositive = { BiliClient.prefs.disclaimerAccepted = true },
+                onNegative = { finish() },
+                onDismiss = {
+                    disclaimerPopup = null
+                    if (!BiliClient.prefs.disclaimerAccepted && !isChangingConfigurations) finish()
+                },
+            )
     }
 
     private fun showLastCrashPromptIfNeeded() {
         if (!BiliClient.prefs.disclaimerAccepted) return
-        if (disclaimerDialog?.isShowing == true) return
-        if (crashPromptDialog?.isShowing == true) return
+        if (disclaimerPopup?.isShowing == true) return
+        if (crashPromptPopup?.isShowing == true) return
 
         val crash = CrashTracker.loadLastCrash(this) ?: return
         if (CrashTracker.wasPrompted(this, crash.crashAtMs)) return
 
         CrashTracker.markPrompted(this, crash.crashAtMs)
-        val dialog =
-            MaterialAlertDialogBuilder(this)
-                .setTitle("检测到上次异常退出")
-                .setMessage("为了帮助开发者定位问题，请到「设置 - 关于应用 - 导出日志」导出日志并发送给开发者。")
-                .setNegativeButton("知道了", null)
-                .setPositiveButton("打开设置") { _, _ ->
-                    startActivity(Intent(this, SettingsActivity::class.java))
-                }
-                .create()
-        dialog.setOnDismissListener { crashPromptDialog = null }
-        dialog.show()
-        crashPromptDialog = dialog
+        crashPromptPopup =
+            AppPopup.confirm(
+                context = this,
+                title = "检测到上次异常退出",
+                message = "为了帮助开发者定位问题，请到「设置 - 关于应用 - 导出日志」导出日志并发送给开发者。",
+                positiveText = "打开设置",
+                negativeText = "知道了",
+                onPositive = { startActivity(Intent(this, SettingsActivity::class.java)) },
+                onDismiss = { crashPromptPopup = null },
+            )
     }
 
     private fun refreshSidebarUser() {

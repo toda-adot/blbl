@@ -9,7 +9,7 @@ import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.paging.PagedGridStateMachine
 import blbl.cat3399.core.paging.appliedOrNull
 import blbl.cat3399.core.ui.AppToast
-import blbl.cat3399.core.ui.SingleChoiceDialog
+import blbl.cat3399.core.ui.popup.AppPopup
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -156,14 +156,13 @@ class SearchInteractor(
                 val items = VideoOrder.entries
                 val labels = items.map { context.getString(it.labelRes) }
                 val checked = items.indexOf(state.currentVideoOrder).coerceAtLeast(0)
-                SingleChoiceDialog.show(
+                AppPopup.singleChoice(
                     context = context,
                     title = context.getString(R.string.search_sort_title),
                     items = labels,
                     checkedIndex = checked,
-                    negativeText = context.getString(android.R.string.cancel),
                 ) { which, _ ->
-                    val picked = items.getOrNull(which) ?: return@show
+                    val picked = items.getOrNull(which) ?: return@singleChoice
                     if (picked != state.currentVideoOrder) {
                         state.currentVideoOrder = picked
                         renderer.updateSortUi()
@@ -180,14 +179,13 @@ class SearchInteractor(
                 val items = LiveOrder.entries
                 val labels = items.map { context.getString(it.labelRes) }
                 val checked = items.indexOf(state.currentLiveOrder).coerceAtLeast(0)
-                SingleChoiceDialog.show(
+                AppPopup.singleChoice(
                     context = context,
                     title = context.getString(R.string.search_sort_title),
                     items = labels,
                     checkedIndex = checked,
-                    negativeText = context.getString(android.R.string.cancel),
                 ) { which, _ ->
-                    val picked = items.getOrNull(which) ?: return@show
+                    val picked = items.getOrNull(which) ?: return@singleChoice
                     if (picked != state.currentLiveOrder) {
                         state.currentLiveOrder = picked
                         renderer.updateSortUi()
@@ -200,14 +198,13 @@ class SearchInteractor(
                 val items = UserOrder.entries
                 val labels = items.map { context.getString(it.labelRes) }
                 val checked = items.indexOf(state.currentUserOrder).coerceAtLeast(0)
-                SingleChoiceDialog.show(
+                AppPopup.singleChoice(
                     context = context,
                     title = context.getString(R.string.search_sort_title),
                     items = labels,
                     checkedIndex = checked,
-                    negativeText = context.getString(android.R.string.cancel),
                 ) { which, _ ->
-                    val picked = items.getOrNull(which) ?: return@show
+                    val picked = items.getOrNull(which) ?: return@singleChoice
                     if (picked != state.currentUserOrder) {
                         state.currentUserOrder = picked
                         renderer.updateSortUi()

@@ -42,7 +42,12 @@ object SettingsText {
             else -> "1/5"
         }
 
-    fun aiLevelText(level: Int): String = if (level == 0) "默认(3)" else level.coerceIn(1, 10).toString()
+    fun aiLevelText(level: Int): String =
+        if (level <= 0) {
+            "3"
+        } else {
+            level.coerceIn(1, 10).toString()
+        }
 
     fun gridSpanText(span: Int): String = if (span <= 0) "自动" else span.toString()
 

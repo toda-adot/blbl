@@ -9,7 +9,7 @@ import blbl.cat3399.core.api.BiliApiException
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.prefs.AppPrefs
 import blbl.cat3399.core.ui.AppToast
-import blbl.cat3399.core.ui.SingleChoiceDialog
+import blbl.cat3399.core.ui.popup.AppPopup
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -253,18 +253,17 @@ internal fun PlayerActivity.onFavButtonClicked() {
                     folders.map { folder ->
                         if (folder.favState) "${folder.title}（已收藏）" else folder.title
                     }
-                SingleChoiceDialog.show(
+                AppPopup.singleChoice(
                     context = this@onFavButtonClicked,
                     title = "选择收藏夹",
                     items = labels,
                     checkedIndex = 0,
-                    negativeText = "取消",
-                    onNegative = { binding.btnFav.post { binding.btnFav.requestFocus() } },
+                    onDismiss = { binding.btnFav.post { binding.btnFav.requestFocus() } },
                 ) { index, _ ->
                     val picked = folders.getOrNull(index)
                     if (picked == null) {
                         binding.btnFav.post { binding.btnFav.requestFocus() }
-                        return@show
+                        return@singleChoice
                     }
 
                     val nextSelected = initial.toMutableSet()

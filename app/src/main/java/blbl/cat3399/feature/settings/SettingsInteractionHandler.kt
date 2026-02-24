@@ -8,7 +8,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.text.InputType
-import android.widget.EditText
 import android.widget.TextView
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.ActivityResultLauncher
@@ -19,14 +18,12 @@ import blbl.cat3399.core.log.LogExporter
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.Immersive
-import blbl.cat3399.core.ui.SingleChoiceDialog
-import blbl.cat3399.core.ui.cloneInUserScale
-import blbl.cat3399.core.ui.userScaledContext
+import blbl.cat3399.core.ui.popup.AppPopup
+import blbl.cat3399.core.ui.popup.PopupAction
+import blbl.cat3399.core.ui.popup.PopupActionRole
 import blbl.cat3399.core.update.ApkUpdater
 import blbl.cat3399.feature.risk.GaiaVgateActivity
 import blbl.cat3399.ui.MainActivity
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.progressindicator.LinearProgressIndicator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -52,10 +49,6 @@ class SettingsInteractionHandler(
     private var exportLogsJob: Job? = null
     private var clearCacheJob: Job? = null
     private var cacheSizeJob: Job? = null
-
-    private fun dialogContext(): Context = activity.userScaledContext()
-
-    private fun dialogInflater() = activity.layoutInflater.cloneInUserScale(activity)
 
     fun onSectionShown(sectionName: String) {
         when (sectionName) {
@@ -383,13 +376,13 @@ class SettingsInteractionHandler(
             }
 
             SettingId.DanmakuAiShieldLevel -> {
-                val options = listOf("默认(3)") + (1..10).map { it.toString() }
+                val options = (1..10).map { it.toString() }
                 showChoiceDialog(
                     title = "智能云屏蔽等级",
                     items = options,
                     current = SettingsText.aiLevelText(prefs.danmakuAiShieldLevel),
                 ) { selected ->
-                    prefs.danmakuAiShieldLevel = if (selected.startsWith("默认")) 0 else (selected.toIntOrNull() ?: 0)
+                    prefs.danmakuAiShieldLevel = (selected.toIntOrNull() ?: 3).coerceIn(1, 10)
                     renderer.refreshSection(entry.id)
                 }
             }
@@ -514,12 +507,11 @@ class SettingsInteractionHandler(
                     )
                 val labels = options.map { it.second }
                 val checked = options.indexOfFirst { it.first == prefs.playerHoldSeekMode }.coerceAtLeast(0)
-                SingleChoiceDialog.show(
+                AppPopup.singleChoice(
                     context = activity,
                     title = "长按快进模式",
                     items = labels,
                     checkedIndex = checked,
-                    negativeText = "取消",
                 ) { which, _ ->
                     val value =
                         options.getOrNull(which)?.first
@@ -701,12 +693,11 @@ class SettingsInteractionHandler(
 
     private fun showChoiceDialog(title: String, items: List<String>, checkedIndex: Int, onPicked: (String) -> Unit) {
         val checked = checkedIndex.takeIf { it in items.indices } ?: 0
-        SingleChoiceDialog.show(
+        AppPopup.singleChoice(
             context = activity,
             title = title,
             items = items,
             checkedIndex = checked,
-            negativeText = "取消",
         ) { _, label ->
             onPicked(label)
         }
@@ -714,7 +705,6 @@ class SettingsInteractionHandler(
 
     private fun showPlayerOsdButtonsDialog(sectionIndex: Int, focusId: SettingId) {
         val prefs = BiliClient.prefs
-        val dialogContext = dialogContext()
         val options =
             listOf(
                 blbl.cat3399.core.prefs.AppPrefs.PLAYER_OSD_BTN_PREV to "上一个",
@@ -733,64 +723,68 @@ class SettingsInteractionHandler(
         val keys = options.map { it.first }
         val labels = options.map { it.second }.toTypedArray()
 
-        val selected = prefs.playerOsdButtons.toMutableSet()
+        val selected = prefs.playerOsdButtons.toSet()
         val checked = BooleanArray(keys.size) { idx -> selected.contains(keys[idx]) }
-
-        val dialog =
-            MaterialAlertDialogBuilder(dialogContext)
-                .setTitle("OSD按钮显示")
-                .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
-                    val key = keys[which]
-                    if (isChecked) selected.add(key) else selected.remove(key)
-                }
-                .setNegativeButton("取消", null)
-                .setPositiveButton("确定") { _, _ ->
-                    prefs.playerOsdButtons = keys.filter { selected.contains(it) }
-                    renderer.showSection(sectionIndex, focusId = focusId)
-                }
-                .create()
-
-        dialog.setOnShowListener { dialog.listView?.requestFocus() }
-        dialog.show()
+        AppPopup.multiChoice(
+            context = activity,
+            title = "OSD按钮显示",
+            items = labels.toList(),
+            checked = checked,
+            onChanged = { finalChecked ->
+                prefs.playerOsdButtons =
+                    keys.filterIndexed { idx, _ ->
+                        idx in finalChecked.indices && finalChecked[idx]
+                    }
+            },
+            onDismiss = {
+                renderer.showSection(sectionIndex, focusId = focusId)
+            },
+        )
     }
 
     private fun showUserAgentDialog(sectionIndex: Int, focusId: SettingId) {
         val prefs = BiliClient.prefs
-        val dialogContext = dialogContext()
-        val input =
-            EditText(dialogContext).apply {
-                setText(prefs.userAgent)
-                setSelection(text.length)
-                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_VARIATION_NORMAL
-                minLines = 3
-            }
-        MaterialAlertDialogBuilder(dialogContext)
-            .setTitle("User-Agent")
-            .setView(input)
-            .setPositiveButton("保存") { _, _ ->
-                val ua = input.text?.toString().orEmpty().trim()
+        AppPopup.input(
+            context = activity,
+            title = "User-Agent",
+            initial = prefs.userAgent,
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_VARIATION_NORMAL,
+            minLines = 3,
+            positiveText = "保存",
+            negativeText = "取消",
+            neutralText = "重置默认",
+            validate = { text ->
+                val ua = text.trim()
                 if (ua.isBlank()) {
                     AppToast.show(activity, "User-Agent 不能为空")
-                    return@setPositiveButton
+                    false
+                } else {
+                    true
                 }
+            },
+            onPositive = { text ->
+                val ua = text.trim()
                 prefs.userAgent = ua
                 AppToast.show(activity, "已更新 User-Agent")
                 renderer.showSection(sectionIndex, focusId = focusId)
-            }
-            .setNeutralButton("重置默认") { _, _ ->
+            },
+            onNeutral = {
                 prefs.userAgent = blbl.cat3399.core.prefs.AppPrefs.DEFAULT_UA
                 AppToast.show(activity, "已重置 User-Agent")
                 renderer.showSection(sectionIndex, focusId = focusId)
-            }
-            .setNegativeButton("取消", null)
-            .show()
+            },
+        )
     }
 
     private fun showClearLoginDialog(sectionIndex: Int, focusId: SettingId) {
-        MaterialAlertDialogBuilder(dialogContext())
-            .setTitle("清除登录")
-            .setMessage("将清除 Cookie（SESSDATA 等），需要重新登录。确定继续吗？")
-            .setPositiveButton("确定清除") { _, _ ->
+        AppPopup.confirm(
+            context = activity,
+            title = "清除登录",
+            message = "将清除 Cookie（SESSDATA 等），需要重新登录。确定继续吗？",
+            positiveText = "确定清除",
+            negativeText = "取消",
+            cancelable = true,
+            onPositive = {
                 BiliClient.cookies.clearAll()
                 BiliClient.prefs.webRefreshToken = null
                 BiliClient.prefs.webCookieRefreshCheckedEpochDay = -1L
@@ -799,9 +793,8 @@ class SettingsInteractionHandler(
                 BiliClient.prefs.gaiaVgateVVoucherSavedAtMs = -1L
                 AppToast.show(activity, "已清除 Cookie")
                 renderer.showSection(sectionIndex, focusId = focusId)
-            }
-            .setNegativeButton("取消", null)
-            .show()
+            },
+        )
     }
 
     private fun showClearCacheDialog(sectionIndex: Int, focusId: SettingId) {
@@ -814,31 +807,28 @@ class SettingsInteractionHandler(
             return
         }
 
-        MaterialAlertDialogBuilder(dialogContext())
-            .setTitle("清理缓存")
-            .setMessage("确定清理缓存？")
-            .setPositiveButton("清理") { _, _ -> startClearCache(sectionIndex, focusId) }
-            .setNegativeButton("取消", null)
-            .show()
+        AppPopup.confirm(
+            context = activity,
+            title = "清理缓存",
+            message = "确定清理缓存？",
+            positiveText = "清理",
+            negativeText = "取消",
+            cancelable = true,
+            onPositive = { startClearCache(sectionIndex, focusId) },
+        )
     }
 
     private fun startClearCache(sectionIndex: Int, focusId: SettingId) {
         cacheSizeJob?.cancel()
-        val dialogContext = dialogContext()
-        val view = dialogInflater().inflate(blbl.cat3399.R.layout.dialog_test_update_progress, null, false)
-        val tvStatus = view.findViewById<TextView>(blbl.cat3399.R.id.tv_status)
-        val progress = view.findViewById<LinearProgressIndicator>(blbl.cat3399.R.id.progress)
-        progress.isIndeterminate = true
-        progress.max = 100
-        tvStatus.text = "清理中…"
-
-        val dialog =
-            MaterialAlertDialogBuilder(dialogContext)
-                .setTitle("清理中")
-                .setView(view)
-                .setNegativeButton("取消") { _, _ -> clearCacheJob?.cancel() }
-                .setCancelable(false)
-                .show()
+        val popup =
+            AppPopup.progress(
+                context = activity,
+                title = "清理中",
+                status = "清理中…",
+                negativeText = "取消",
+                cancelable = false,
+                onNegative = { clearCacheJob?.cancel() },
+            )
 
         clearCacheJob =
             activity.lifecycleScope.launch {
@@ -853,17 +843,17 @@ class SettingsInteractionHandler(
                         }
                     }
 
-                    dialog.dismiss()
+                    popup?.dismiss()
                     AppToast.show(activity, "已清理缓存")
                     state.cacheSizeBytes = 0L
                     renderer.showSection(sectionIndex, focusId = focusId)
                     updateCacheSize(force = true)
                 } catch (_: CancellationException) {
-                    dialog.dismiss()
+                    popup?.dismiss()
                     AppToast.show(activity, "已取消")
                 } catch (t: Throwable) {
                     AppLog.w("Settings", "clear cache failed: ${t.message}", t)
-                    dialog.dismiss()
+                    popup?.dismiss()
                     AppToast.showLong(activity, "清理失败")
                 }
             }
@@ -958,21 +948,15 @@ class SettingsInteractionHandler(
             return
         }
 
-        val dialogContext = dialogContext()
-        val view = dialogInflater().inflate(blbl.cat3399.R.layout.dialog_test_update_progress, null, false)
-        val tvStatus = view.findViewById<TextView>(blbl.cat3399.R.id.tv_status)
-        val progress = view.findViewById<LinearProgressIndicator>(blbl.cat3399.R.id.progress)
-        progress.isIndeterminate = true
-        progress.max = 100
-        tvStatus.text = "检查更新…"
-
-        val dialog =
-            MaterialAlertDialogBuilder(dialogContext)
-                .setTitle("下载更新")
-                .setView(view)
-                .setNegativeButton("取消") { _, _ -> testUpdateJob?.cancel() }
-                .setCancelable(false)
-                .show()
+        val popup =
+            AppPopup.progress(
+                context = activity,
+                title = "下载更新",
+                status = "检查更新…",
+                negativeText = "取消",
+                cancelable = false,
+                onNegative = { testUpdateJob?.cancel() },
+            )
 
         testUpdateJob =
             activity.lifecycleScope.launch {
@@ -983,10 +967,8 @@ class SettingsInteractionHandler(
                         state.testUpdateCheckState = TestUpdateCheckState.Latest(latestVersion)
                         state.testUpdateCheckedAtMs = System.currentTimeMillis()
                         renderer.refreshAboutSectionKeepPosition()
-                        activity.runOnUiThread {
-                            dialog.dismiss()
-                            AppToast.show(activity, "已是最新版（当前：$currentVersion）")
-                        }
+                        popup?.dismiss()
+                        AppToast.show(activity, "已是最新版（当前：$currentVersion）")
                         return@launch
                     }
 
@@ -994,10 +976,8 @@ class SettingsInteractionHandler(
                     state.testUpdateCheckedAtMs = System.currentTimeMillis()
                     renderer.refreshAboutSectionKeepPosition()
 
-                    activity.runOnUiThread {
-                        tvStatus.text = "准备下载…（最新：$latestVersion）"
-                        progress.isIndeterminate = true
-                    }
+                    popup?.updateStatus("准备下载…（最新：$latestVersion）")
+                    popup?.updateProgress(null)
 
                     ApkUpdater.markStarted(now)
                     val apkFile =
@@ -1005,58 +985,62 @@ class SettingsInteractionHandler(
                             context = activity,
                             url = ApkUpdater.TEST_APK_URL,
                         ) { dlState ->
-                            activity.runOnUiThread {
-                                when (dlState) {
-                                    ApkUpdater.Progress.Connecting -> {
-                                        progress.isIndeterminate = true
-                                        tvStatus.text = "连接中…"
-                                    }
+                            when (dlState) {
+                                ApkUpdater.Progress.Connecting -> {
+                                    popup?.updateProgress(null)
+                                    popup?.updateStatus("连接中…")
+                                }
 
-                                    is ApkUpdater.Progress.Downloading -> {
-                                        val pct = dlState.percent
-                                        if (pct != null) {
-                                            progress.isIndeterminate = false
-                                            progress.progress = pct.coerceIn(0, 100)
-                                            tvStatus.text = "下载中… ${pct.coerceIn(0, 100)}% ${dlState.hint}"
-                                        } else {
-                                            progress.isIndeterminate = true
-                                            tvStatus.text = "下载中… ${dlState.hint}"
-                                        }
+                                is ApkUpdater.Progress.Downloading -> {
+                                    val pct = dlState.percent
+                                    if (pct != null) {
+                                        popup?.updateProgress(pct.coerceIn(0, 100))
+                                        popup?.updateStatus("下载中… ${pct.coerceIn(0, 100)}% ${dlState.hint}")
+                                    } else {
+                                        popup?.updateProgress(null)
+                                        popup?.updateStatus("下载中… ${dlState.hint}")
                                     }
                                 }
                             }
                         }
 
-                    activity.runOnUiThread {
-                        tvStatus.text = "准备安装…"
-                        progress.isIndeterminate = true
-                    }
+                    popup?.updateStatus("准备安装…")
+                    popup?.updateProgress(null)
+                    popup?.dismiss()
                     ApkUpdater.installApk(activity, apkFile)
                 } catch (_: CancellationException) {
-                    activity.runOnUiThread {
-                        dialog.dismiss()
-                        AppToast.show(activity, "已取消更新")
-                    }
+                    popup?.dismiss()
+                    AppToast.show(activity, "已取消更新")
                 } catch (t: Throwable) {
                     AppLog.w("TestUpdate", "update failed: ${t.message}")
-                    activity.runOnUiThread {
-                        dialog.dismiss()
-                        AppToast.showLong(activity, "更新失败：${t.message ?: "未知错误"}")
-                    }
+                    popup?.dismiss()
+                    AppToast.showLong(activity, "更新失败：${t.message ?: "未知错误"}")
                 }
             }
     }
 
     private fun showProjectDialog() {
-        MaterialAlertDialogBuilder(dialogContext())
-            .setTitle("项目地址")
-            .setMessage(SettingsConstants.PROJECT_URL)
-            .setPositiveButton("打开") { _, _ -> openUrl(SettingsConstants.PROJECT_URL) }
-            .setNeutralButton("复制") { _, _ ->
-                copyToClipboard(label = "项目地址", text = SettingsConstants.PROJECT_URL, toastText = "已复制项目地址")
-            }
-            .setNegativeButton("关闭", null)
-            .show()
+        AppPopup.custom(
+            context = activity,
+            title = "项目地址",
+            cancelable = true,
+            actions =
+                listOf(
+                    PopupAction(role = PopupActionRole.NEGATIVE, text = "关闭"),
+                    PopupAction(role = PopupActionRole.NEUTRAL, text = "复制") {
+                        copyToClipboard(label = "项目地址", text = SettingsConstants.PROJECT_URL, toastText = "已复制项目地址")
+                    },
+                    PopupAction(role = PopupActionRole.POSITIVE, text = "打开") { openUrl(SettingsConstants.PROJECT_URL) },
+                ),
+            preferredActionRole = PopupActionRole.POSITIVE,
+            content = { dialogContext ->
+                val tv =
+                    android.view.LayoutInflater.from(dialogContext)
+                        .inflate(blbl.cat3399.R.layout.view_popup_message, null, false) as TextView
+                tv.text = SettingsConstants.PROJECT_URL
+                tv
+            },
+        )
     }
 
     private fun openUrl(url: String) {
@@ -1121,53 +1105,63 @@ class SettingsInteractionHandler(
                 }
             }
 
-        MaterialAlertDialogBuilder(dialogContext())
-            .setTitle("风控验证")
-            .setMessage(msg)
-            .setPositiveButton(if (hasVoucher) "开始验证" else "粘贴 v_voucher") { _, _ ->
-                if (hasVoucher) {
-                    gaiaVgateLauncher.launch(
-                        Intent(activity, GaiaVgateActivity::class.java)
-                            .putExtra(GaiaVgateActivity.EXTRA_V_VOUCHER, vVoucher),
-                    )
-                } else {
-                    showGaiaVgateVoucherDialog(sectionIndex, focusId)
-                }
-            }
-            .setNeutralButton("编辑 v_voucher") { _, _ ->
-                showGaiaVgateVoucherDialog(sectionIndex, focusId)
-            }
-            .setNegativeButton("关闭", null)
-            .show()
+        AppPopup.custom(
+            context = activity,
+            title = "风控验证",
+            cancelable = true,
+            actions =
+                listOf(
+                    PopupAction(role = PopupActionRole.NEGATIVE, text = "关闭"),
+                    PopupAction(role = PopupActionRole.NEUTRAL, text = "编辑 v_voucher") {
+                        showGaiaVgateVoucherDialog(sectionIndex, focusId)
+                    },
+                    PopupAction(role = PopupActionRole.POSITIVE, text = if (hasVoucher) "开始验证" else "粘贴 v_voucher") {
+                        if (hasVoucher) {
+                            gaiaVgateLauncher.launch(
+                                Intent(activity, GaiaVgateActivity::class.java)
+                                    .putExtra(GaiaVgateActivity.EXTRA_V_VOUCHER, vVoucher),
+                            )
+                        } else {
+                            showGaiaVgateVoucherDialog(sectionIndex, focusId)
+                        }
+                    },
+                ),
+            preferredActionRole = PopupActionRole.POSITIVE,
+            content = { dialogContext ->
+                val tv =
+                    android.view.LayoutInflater.from(dialogContext)
+                        .inflate(blbl.cat3399.R.layout.view_popup_message, null, false) as TextView
+                tv.text = msg
+                tv
+            },
+        )
     }
 
     private fun showGaiaVgateVoucherDialog(sectionIndex: Int, focusId: SettingId) {
         val prefs = BiliClient.prefs
-        val dialogContext = dialogContext()
-        val input =
-            EditText(dialogContext).apply {
-                setText(prefs.gaiaVgateVVoucher.orEmpty())
-                setSelection(text.length)
-                hint = "粘贴 v_voucher"
-                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_NORMAL
-            }
-        MaterialAlertDialogBuilder(dialogContext)
-            .setTitle("编辑 v_voucher")
-            .setView(input)
-            .setPositiveButton("保存") { _, _ ->
-                val v = input.text?.toString().orEmpty().trim()
+        AppPopup.input(
+            context = activity,
+            title = "编辑 v_voucher",
+            initial = prefs.gaiaVgateVVoucher.orEmpty(),
+            hint = "粘贴 v_voucher",
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_NORMAL,
+            minLines = 1,
+            positiveText = "保存",
+            negativeText = "取消",
+            neutralText = "清除",
+            onPositive = { text ->
+                val v = text.trim()
                 prefs.gaiaVgateVVoucher = v.takeIf { it.isNotBlank() }
                 prefs.gaiaVgateVVoucherSavedAtMs = if (v.isNotBlank()) System.currentTimeMillis() else -1L
                 AppToast.show(activity, if (v.isNotBlank()) "已保存 v_voucher" else "已清除 v_voucher")
                 renderer.showSection(sectionIndex, focusId = focusId)
-            }
-            .setNeutralButton("清除") { _, _ ->
+            },
+            onNeutral = {
                 prefs.gaiaVgateVVoucher = null
                 prefs.gaiaVgateVVoucherSavedAtMs = -1L
                 AppToast.show(activity, "已清除 v_voucher")
                 renderer.showSection(sectionIndex, focusId = focusId)
-            }
-            .setNegativeButton("取消", null)
-            .show()
+            },
+        )
     }
 }

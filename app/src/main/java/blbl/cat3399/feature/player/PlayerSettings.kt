@@ -5,7 +5,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.prefs.AppPrefs
 import blbl.cat3399.core.ui.AppToast
-import blbl.cat3399.core.ui.SingleChoiceDialog
+import blbl.cat3399.core.ui.popup.AppPopup
 import java.util.Locale
 import android.util.TypedValue
 import androidx.lifecycle.lifecycleScope
@@ -149,21 +149,19 @@ internal fun PlayerActivity.showResolutionDialog() {
             ?: session.targetQn.takeIf { it > 0 }
             ?: session.preferredQn
     val currentIndex = docQns.indexOfFirst { it == currentQn }.takeIf { it >= 0 } ?: 0
-    SingleChoiceDialog.show(
+    AppPopup.singleChoice(
         context = this,
         title = "分辨率",
         items = options,
         checkedIndex = currentIndex,
-        neutralText = "自动",
-        onNeutral = {
-            session = session.copy(targetQn = 0)
-            refreshSettings(binding.recyclerSettings.adapter as PlayerSettingsAdapter)
-            reloadStream(keepPosition = true)
-        },
-        negativeText = "取消",
     ) { which, _ ->
-        val qn = docQns.getOrNull(which) ?: return@show
-        session = session.copy(targetQn = qn)
+        val qn = docQns.getOrNull(which) ?: return@singleChoice
+        session =
+            if (qn == session.preferredQn) {
+                session.copy(targetQn = 0)
+            } else {
+                session.copy(targetQn = qn)
+            }
         refreshSettings(binding.recyclerSettings.adapter as PlayerSettingsAdapter)
         reloadStream(keepPosition = true)
     }
@@ -184,21 +182,19 @@ internal fun PlayerActivity.showAudioDialog() {
             ?: session.preferAudioId
     val currentIndex = docIds.indexOfFirst { it == currentId }.takeIf { it >= 0 } ?: 0
 
-    SingleChoiceDialog.show(
+    AppPopup.singleChoice(
         context = this,
         title = "音轨",
         items = options,
         checkedIndex = currentIndex,
-        neutralText = "默认",
-        onNeutral = {
-            session = session.copy(targetAudioId = 0)
-            refreshSettings(binding.recyclerSettings.adapter as PlayerSettingsAdapter)
-            reloadStream(keepPosition = true)
-        },
-        negativeText = "取消",
     ) { which, _ ->
-        val id = docIds.getOrNull(which) ?: return@show
-        session = session.copy(targetAudioId = id)
+        val id = docIds.getOrNull(which) ?: return@singleChoice
+        session =
+            if (id == session.preferAudioId) {
+                session.copy(targetAudioId = 0)
+            } else {
+                session.copy(targetAudioId = id)
+            }
         refreshSettings(binding.recyclerSettings.adapter as PlayerSettingsAdapter)
         reloadStream(keepPosition = true)
     }
@@ -207,12 +203,11 @@ internal fun PlayerActivity.showAudioDialog() {
 internal fun PlayerActivity.showCodecDialog() {
     val options = arrayOf("AVC", "HEVC", "AV1")
     val current = options.indexOf(session.preferCodec).coerceAtLeast(0)
-    SingleChoiceDialog.show(
+    AppPopup.singleChoice(
         context = this,
         title = "视频编码",
         items = options.toList(),
         checkedIndex = current,
-        negativeText = "取消",
     ) { which, _ ->
         val selected = options.getOrNull(which) ?: "AVC"
         session = session.copy(preferCodec = selected)
@@ -224,12 +219,11 @@ internal fun PlayerActivity.showCodecDialog() {
 internal fun PlayerActivity.showSpeedDialog() {
     val options = arrayOf("0.50x", "0.75x", "1.00x", "1.25x", "1.50x", "2.00x")
     val current = options.indexOf(String.format(Locale.US, "%.2fx", session.playbackSpeed)).let { if (it >= 0) it else 2 }
-    SingleChoiceDialog.show(
+    AppPopup.singleChoice(
         context = this,
         title = "播放速度",
         items = options.toList(),
         checkedIndex = current,
-        negativeText = "取消",
     ) { which, _ ->
         val selected = options.getOrNull(which) ?: "1.00x"
         val v = selected.removeSuffix("x").toFloatOrNull() ?: 1.0f
@@ -307,29 +301,48 @@ internal fun PlayerActivity.showPlaybackModeDialog() {
         )
     val currentLabel = playbackModeLabel(resolvedPlaybackMode())
     val checked = items.indexOf(currentLabel).coerceAtLeast(0)
-    SingleChoiceDialog.show(
+    AppPopup.singleChoice(
         context = this,
         title = "播放模式",
         items = items,
         checkedIndex = checked,
-        negativeText = "取消",
-        neutralText = "默认",
-        onNeutral = {
-            session = session.copy(playbackModeOverride = null)
-            applyPlaybackMode(exo)
-            updatePlaylistControls()
-            refreshSettings(binding.recyclerSettings.adapter as PlayerSettingsAdapter)
-        },
     ) { which, _ ->
         val chosen = items.getOrNull(which).orEmpty()
-        session =
+        val pickedCode =
             when {
-                chosen.startsWith("循环") -> session.copy(playbackModeOverride = AppPrefs.PLAYER_PLAYBACK_MODE_LOOP_ONE)
-                chosen.startsWith("播放视频列表") -> session.copy(playbackModeOverride = AppPrefs.PLAYER_PLAYBACK_MODE_PAGE_LIST)
-                chosen.startsWith("播放合集/分P") -> session.copy(playbackModeOverride = AppPrefs.PLAYER_PLAYBACK_MODE_PARTS_LIST)
-                chosen.startsWith("播放推荐") -> session.copy(playbackModeOverride = AppPrefs.PLAYER_PLAYBACK_MODE_RECOMMEND)
-                chosen.startsWith("退出") -> session.copy(playbackModeOverride = AppPrefs.PLAYER_PLAYBACK_MODE_EXIT)
-                else -> session.copy(playbackModeOverride = AppPrefs.PLAYER_PLAYBACK_MODE_NONE)
+                chosen.startsWith("循环") -> AppPrefs.PLAYER_PLAYBACK_MODE_LOOP_ONE
+                chosen.startsWith("播放视频列表") -> AppPrefs.PLAYER_PLAYBACK_MODE_PAGE_LIST
+                chosen.startsWith("播放合集/分P") -> AppPrefs.PLAYER_PLAYBACK_MODE_PARTS_LIST
+                chosen.startsWith("播放推荐") -> AppPrefs.PLAYER_PLAYBACK_MODE_RECOMMEND
+                chosen.startsWith("退出") -> AppPrefs.PLAYER_PLAYBACK_MODE_EXIT
+                else -> AppPrefs.PLAYER_PLAYBACK_MODE_NONE
+            }
+        val defaultCode =
+            run {
+                val prefs = BiliClient.prefs
+                val rawDefault =
+                    if (isPgcLikePlayback()) {
+                        AppPrefs.PLAYER_PLAYBACK_MODE_PAGE_LIST
+                    } else {
+                        prefs.playerPlaybackMode
+                    }
+                when (rawDefault) {
+                    AppPrefs.PLAYER_PLAYBACK_MODE_NONE,
+                    AppPrefs.PLAYER_PLAYBACK_MODE_LOOP_ONE,
+                    AppPrefs.PLAYER_PLAYBACK_MODE_EXIT,
+                    AppPrefs.PLAYER_PLAYBACK_MODE_PAGE_LIST,
+                    AppPrefs.PLAYER_PLAYBACK_MODE_PARTS_LIST,
+                    AppPrefs.PLAYER_PLAYBACK_MODE_RECOMMEND,
+                    -> rawDefault
+
+                    else -> AppPrefs.PLAYER_PLAYBACK_MODE_NONE
+                }
+            }
+        session =
+            if (pickedCode == defaultCode) {
+                session.copy(playbackModeOverride = null)
+            } else {
+                session.copy(playbackModeOverride = pickedCode)
             }
         applyPlaybackMode(exo)
         updatePlaylistControls()
@@ -393,26 +406,27 @@ internal fun PlayerActivity.showSubtitleLangDialog() {
             reloadStream(keepPosition = true)
         }
     }
-    SingleChoiceDialog.show(
+    AppPopup.singleChoice(
         context = this,
         title = "字幕语言（本次播放）",
         items = items,
         checkedIndex = checked,
-        negativeText = "取消",
-        neutralText = "默认",
-        onNeutral = {
-            session = session.copy(subtitleLangOverride = null)
-            applyAndReload()
-        },
     ) { which, _ ->
         val chosen = items.getOrNull(which).orEmpty()
-        session =
+        val pickedCode =
             when {
-                chosen.startsWith("自动") -> session.copy(subtitleLangOverride = "auto")
-                else -> {
-                    val code = subtitleItems.firstOrNull { it.lanDoc == chosen }?.lan ?: subtitleItems.first().lan
-                    session.copy(subtitleLangOverride = code)
-                }
+                chosen.startsWith("自动") -> "auto"
+                else -> subtitleItems.firstOrNull { it.lanDoc == chosen }?.lan ?: subtitleItems.first().lan
+            }
+        val defaultCode =
+            prefs.subtitlePreferredLang
+                .trim()
+                .ifBlank { "auto" }
+        session =
+            if (pickedCode.equals(defaultCode, ignoreCase = true)) {
+                session.copy(subtitleLangOverride = null)
+            } else {
+                session.copy(subtitleLangOverride = pickedCode)
             }
         applyAndReload()
     }
@@ -425,12 +439,11 @@ internal fun PlayerActivity.showSubtitleTextSizeDialog() {
         options.indices.minByOrNull { abs(options[it].toFloat() - session.subtitleTextSizeSp) }
             ?: options.indexOf(26).takeIf { it >= 0 }
             ?: 0
-    SingleChoiceDialog.show(
+    AppPopup.singleChoice(
         context = this,
         title = "字幕字体大小",
         items = items.toList(),
         checkedIndex = current,
-        negativeText = "取消",
     ) { which, _ ->
         val v = (options.getOrNull(which) ?: session.subtitleTextSizeSp.toInt()).toFloat()
         session = session.copy(subtitleTextSizeSp = v)
@@ -470,12 +483,11 @@ internal fun PlayerActivity.showDanmakuOpacityDialog() {
     val options = (20 downTo 1).map { it / 20f }
     val items = options.map { String.format(Locale.US, "%.2f", it) }
     val current = options.indices.minByOrNull { kotlin.math.abs(options[it] - session.danmaku.opacity) } ?: 0
-    SingleChoiceDialog.show(
+    AppPopup.singleChoice(
         context = this,
         title = "弹幕透明度",
         items = items,
         checkedIndex = current,
-        negativeText = "取消",
     ) { which, _ ->
         val v = options.getOrNull(which) ?: session.danmaku.opacity
         session = session.copy(danmaku = session.danmaku.copy(opacity = v))
@@ -491,12 +503,11 @@ internal fun PlayerActivity.showDanmakuTextSizeDialog() {
         options.indices.minByOrNull { kotlin.math.abs(options[it].toFloat() - session.danmaku.textSizeSp) }
             ?: options.indexOf(18).takeIf { it >= 0 }
             ?: 0
-    SingleChoiceDialog.show(
+    AppPopup.singleChoice(
         context = this,
         title = "弹幕字体大小",
         items = items.toList(),
         checkedIndex = current,
-        negativeText = "取消",
     ) { which, _ ->
         val v = (options.getOrNull(which) ?: session.danmaku.textSizeSp.toInt()).toFloat()
         session = session.copy(danmaku = session.danmaku.copy(textSizeSp = v))
@@ -509,12 +520,11 @@ internal fun PlayerActivity.showDanmakuSpeedDialog() {
     val options = (1..10).toList()
     val items = options.map { it.toString() }
     val current = options.indexOf(session.danmaku.speedLevel).let { if (it >= 0) it else 3 }
-    SingleChoiceDialog.show(
+    AppPopup.singleChoice(
         context = this,
         title = "弹幕速度(1~10)",
         items = items,
         checkedIndex = current,
-        negativeText = "取消",
     ) { which, _ ->
         val v = options.getOrNull(which) ?: session.danmaku.speedLevel
         session = session.copy(danmaku = session.danmaku.copy(speedLevel = v))
@@ -540,12 +550,11 @@ internal fun PlayerActivity.showDanmakuAreaDialog() {
     val current =
         options.indices.minByOrNull { kotlin.math.abs(options[it].first - session.danmaku.area) }
             ?: options.lastIndex
-    SingleChoiceDialog.show(
+    AppPopup.singleChoice(
         context = this,
         title = "弹幕区域",
         items = items,
         checkedIndex = current,
-        negativeText = "取消",
     ) { which, _ ->
         val v = options.getOrNull(which)?.first ?: session.danmaku.area
         session = session.copy(danmaku = session.danmaku.copy(area = v))
