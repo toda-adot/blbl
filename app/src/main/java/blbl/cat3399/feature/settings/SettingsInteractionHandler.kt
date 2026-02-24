@@ -24,6 +24,7 @@ import blbl.cat3399.core.ui.cloneInUserScale
 import blbl.cat3399.core.ui.userScaledContext
 import blbl.cat3399.core.update.ApkUpdater
 import blbl.cat3399.feature.risk.GaiaVgateActivity
+import blbl.cat3399.ui.MainActivity
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import kotlinx.coroutines.CancellationException
@@ -139,6 +140,32 @@ class SettingsInteractionHandler(
                 prefs.imageQuality = next
                 AppToast.show(activity, "图片质量：$next")
                 renderer.refreshSection(entry.id)
+            }
+
+            SettingId.ThemePreset -> {
+                val options =
+                    listOf(
+                        blbl.cat3399.core.prefs.AppPrefs.THEME_PRESET_DEFAULT to "默认",
+                        blbl.cat3399.core.prefs.AppPrefs.THEME_PRESET_TV_PINK to "小电视粉",
+                    )
+                showChoiceDialog(
+                    title = "主题预设",
+                    items = options.map { it.second },
+                    current = SettingsText.themePresetText(prefs.themePreset),
+                ) { selected ->
+                    val key =
+                        options.firstOrNull { it.second == selected }?.first
+                            ?: blbl.cat3399.core.prefs.AppPrefs.THEME_PRESET_DEFAULT
+
+                    if (prefs.themePreset == key) {
+                        AppToast.show(activity, "主题预设：$selected")
+                        return@showChoiceDialog
+                    }
+
+                    prefs.themePreset = key
+                    AppToast.show(activity, "主题预设：$selected（已应用）")
+                    restartToMainForThemePreset()
+                }
             }
 
             SettingId.UserAgent -> showUserAgentDialog(state.currentSectionIndex, entry.id)
@@ -653,6 +680,13 @@ class SettingsInteractionHandler(
 
             else -> AppLog.i("Settings", "click id=${entry.id.key} title=${entry.title}")
         }
+    }
+
+    private fun restartToMainForThemePreset() {
+        val intent =
+            Intent(activity, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        activity.startActivity(intent)
     }
 
     private fun showChoiceDialog(title: String, items: List<String>, current: String, onPicked: (String) -> Unit) {

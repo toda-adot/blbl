@@ -8,10 +8,10 @@
     android:clickable="true"
     android:focusable="true"
     android:stateListAnimator="@animator/blbl_focus_scale"
-    app:cardBackgroundColor="@color/blbl_surface"
+    app:cardBackgroundColor="?attr/colorSurface"
     app:cardCornerRadius="12dp"
     app:cardElevation="0dp"
-    app:strokeColor="@color/blbl_focus_stroke"
+    app:strokeColor="?attr/blblFocusStrokeColor"
     app:strokeWidth="2dp">
 
     <TextView
@@ -20,8 +20,7 @@
         android:layout_height="match_parent"
         android:gravity="center"
         android:text="A"
-        android:textColor="@color/blbl_text"
+        android:textColor="?attr/colorOnSurface"
         android:textSize="18sp"
         android:textStyle="bold" />
 </com.google.android.material.card.MaterialCardView>
-

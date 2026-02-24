@@ -10,7 +10,7 @@
     app:cardBackgroundColor="@android:color/transparent"
     app:cardCornerRadius="10dp"
     app:cardElevation="0dp"
-    app:strokeColor="@color/blbl_focus_stroke"
+    app:strokeColor="?attr/blblFocusStrokeColor"
     app:strokeWidth="2dp">
 
     <androidx.constraintlayout.widget.ConstraintLayout
@@ -36,7 +36,7 @@
             android:ellipsize="end"
             android:lines="1"
             android:maxLines="1"
-            android:textColor="@color/blbl_text"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="14sp"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
@@ -50,7 +50,7 @@
             android:layout_marginBottom="8dp"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textColor="@color/blbl_text_secondary"
+            android:textColor="?android:attr/textColorSecondary"
             android:textSize="12sp"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
@@ -58,4 +58,3 @@
             app:layout_constraintTop_toBottomOf="@id/tv_title" />
     </androidx.constraintlayout.widget.ConstraintLayout>
 </com.google.android.material.card.MaterialCardView>
-

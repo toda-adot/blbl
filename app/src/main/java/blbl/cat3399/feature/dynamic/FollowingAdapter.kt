@@ -2,12 +2,13 @@ package blbl.cat3399.feature.dynamic
 
 import android.view.LayoutInflater
 import android.view.ViewGroup
-import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import blbl.cat3399.core.image.ImageLoader
 import blbl.cat3399.core.image.ImageUrl
+import blbl.cat3399.core.ui.ThemeColor
 import blbl.cat3399.core.ui.cloneInUserScale
 import blbl.cat3399.databinding.ItemFollowingBinding
+import com.google.android.material.R as MaterialR
 
 class FollowingAdapter(
     private val onClick: (FollowingUi) -> Unit,
@@ -78,11 +79,14 @@ class FollowingAdapter(
     class Vh(private val binding: ItemFollowingBinding) : RecyclerView.ViewHolder(binding.root) {
         fun bind(item: FollowingUi, selected: Boolean, onClick: (FollowingUi) -> Unit) {
             binding.tvName.text = item.name
+            val ctx = binding.root.context
+            val primaryText = ThemeColor.resolve(ctx, MaterialR.attr.colorOnSurface, blbl.cat3399.R.color.blbl_text)
+            val secondaryText = ThemeColor.resolve(ctx, android.R.attr.textColorSecondary, blbl.cat3399.R.color.blbl_text_secondary)
             if (item.isAll) {
                 binding.ivAvatar.setImageResource(blbl.cat3399.R.drawable.ic_all)
                 binding.ivAvatar.imageTintList =
                     android.content.res.ColorStateList.valueOf(
-                        androidx.core.content.ContextCompat.getColor(binding.root.context, blbl.cat3399.R.color.blbl_text),
+                        primaryText,
                     )
             } else {
                 binding.ivAvatar.imageTintList = null
@@ -91,10 +95,7 @@ class FollowingAdapter(
             binding.vSelected.visibility = if (selected) android.view.View.VISIBLE else android.view.View.GONE
             binding.root.isSelected = selected
             binding.tvName.setTextColor(
-                ContextCompat.getColor(
-                    binding.root.context,
-                    if (selected) blbl.cat3399.R.color.blbl_text else blbl.cat3399.R.color.blbl_text_secondary,
-                ),
+                if (selected) primaryText else secondaryText,
             )
             binding.root.setOnClickListener { onClick(item) }
         }

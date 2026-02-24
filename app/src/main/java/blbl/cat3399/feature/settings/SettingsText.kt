@@ -55,6 +55,12 @@ object SettingsText {
             else -> "推荐"
         }
 
+    fun themePresetText(prefValue: String): String =
+        when (prefValue) {
+            blbl.cat3399.core.prefs.AppPrefs.THEME_PRESET_TV_PINK -> "小电视粉"
+            else -> "默认"
+        }
+
     fun uiScaleFactorText(factor: Float): String {
         val v = factor.takeIf { it.isFinite() } ?: 1.0f
         return String.format(Locale.US, "%.2fx", v)

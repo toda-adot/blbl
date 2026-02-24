@@ -5,10 +5,10 @@ import android.os.SystemClock
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import blbl.cat3399.R
 import blbl.cat3399.core.log.AppLog
+import blbl.cat3399.core.ui.ThemeColor
 import blbl.cat3399.databinding.ItemSidebarNavBinding
 
 class SidebarNavAdapter(
@@ -89,12 +89,18 @@ class SidebarNavAdapter(
             binding.ivIcon.setImageResource(item.iconRes)
             binding.tvLabel.text = item.title
             binding.tvLabel.visibility = if (showLabelsAlways || selected) View.VISIBLE else View.GONE
+            val ctx = binding.root.context
             binding.card.setCardBackgroundColor(
-                if (selected) ContextCompat.getColor(binding.root.context, R.color.blbl_surface) else 0x00000000,
+                if (selected) ThemeColor.resolve(ctx, R.attr.blblAccentContainer, R.color.blbl_surface) else 0x00000000,
             )
             binding.card.isSelected = selected
-            val iconTint = if (selected) R.color.blbl_purple else R.color.blbl_text_secondary
-            binding.ivIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(binding.root.context, iconTint))
+            val iconTint =
+                if (selected) {
+                    ThemeColor.resolve(ctx, R.attr.blblAccent, R.color.blbl_purple)
+                } else {
+                    ThemeColor.resolve(ctx, android.R.attr.textColorSecondary, R.color.blbl_text_secondary)
+                }
+            binding.ivIcon.imageTintList = ColorStateList.valueOf(iconTint)
 
             val heightRes =
                 when {

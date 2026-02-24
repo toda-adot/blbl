@@ -11,7 +11,7 @@
     app:cardCornerRadius="10dp"
     app:cardElevation="0dp"
     app:cardUseCompatPadding="false"
-    app:strokeColor="@color/blbl_focus_stroke"
+    app:strokeColor="?attr/blblFocusStrokeColor"
     app:strokeWidth="2dp">
 
     <androidx.constraintlayout.widget.ConstraintLayout
@@ -52,7 +52,7 @@
             android:ellipsize="end"
             android:lines="2"
             android:maxLines="2"
-            android:textColor="@color/blbl_text"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/video_card_title_text_size"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
@@ -60,4 +60,3 @@
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 </com.google.android.material.card.MaterialCardView>
-

@@ -10,7 +10,9 @@
     android:stateListAnimator="@animator/blbl_focus_scale"
     app:cardBackgroundColor="@android:color/transparent"
     app:cardCornerRadius="10dp"
-    app:cardElevation="0dp">
+    app:cardElevation="0dp"
+    app:strokeColor="?attr/blblFocusStrokeFocusOnlyColor"
+    app:strokeWidth="2dp">
 
     <LinearLayout
         android:id="@+id/container"
@@ -25,7 +27,7 @@
             android:layout_width="@dimen/following_selected_width"
             android:layout_height="@dimen/following_selected_height"
             android:layout_marginEnd="@dimen/following_selected_margin_end"
-            android:background="@color/blbl_purple"
+            android:background="?attr/blblAccent"
             android:visibility="gone" />
 
         <com.google.android.material.imageview.ShapeableImageView
@@ -45,7 +47,7 @@
             android:ellipsize="end"
             android:gravity="center_vertical"
             android:maxLines="1"
-            android:textColor="@color/blbl_text"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/following_name_text_size" />
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

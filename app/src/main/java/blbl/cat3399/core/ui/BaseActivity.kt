@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Bundle
 import android.os.Build
 import androidx.appcompat.app.AppCompatActivity
+import blbl.cat3399.core.theme.ThemePresets
 
 open class BaseActivity : AppCompatActivity() {
     private var createdUiScaleFactor: Float? = null
@@ -15,6 +16,7 @@ open class BaseActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        ThemePresets.applyTo(this)
         super.onCreate(savedInstanceState)
         createdUiScaleFactor = UiScale.factor(this)
     }

@@ -52,12 +52,22 @@ object UiUserScale {
         config.densityDpi = targetDensityDpi
 
         // Important: use a themed wrapper so AppCompat/MaterialComponents views can inflate correctly.
-        // We must apply a concrete theme resource here (instead of `theme.setTo(...)`) because some
-        // internal Material layouts rely on AppCompat theme attrs like `listPreferredItemHeightSmall`.
         //
-        // Note: the app uses Theme.Blbl as the global theme in AndroidManifest.xml.
-        val themed = ContextThemeWrapper(originalBase, R.style.Theme_Blbl)
-        themed.applyOverrideConfiguration(config)
+        // Requirements:
+        // - Preserve the current theme preset applied to Activities (ThemePresets.applyTo(activity)),
+        //   otherwise switching theme will "randomly not work" whenever UiScale != 1.0.
+        // - Provide missing AppCompat/Material attributes for the subtree (e.g. listPreferredItemHeightSmall).
+        //
+        // Implementation:
+        // - Create a configuration context (density override only).
+        // - Clone the base theme into the new Resources instance.
+        // - Apply Theme.Blbl as a fallback with force=false (do not override preset/overlays).
+        val configContext = originalBase.createConfigurationContext(config)
+        val theme = configContext.resources.newTheme().apply {
+            setTo(originalBase.theme)
+            applyStyle(R.style.Theme_Blbl, false)
+        }
+        val themed = ContextThemeWrapper(configContext, theme)
         return UserScaledContext(
             base = themed,
             originalBase = originalBase,

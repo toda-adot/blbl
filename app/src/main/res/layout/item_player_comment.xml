@@ -7,9 +7,9 @@
     android:clickable="true"
     android:focusable="true"
     android:stateListAnimator="@animator/blbl_focus_scale"
-    app:cardBackgroundColor="@color/blbl_surface"
+    app:cardBackgroundColor="?attr/colorSurface"
     app:cardCornerRadius="@dimen/player_comment_item_corner_radius"
-    app:strokeColor="@color/blbl_focus_stroke"
+    app:strokeColor="?attr/blblFocusStrokeColor"
     app:strokeWidth="@dimen/player_comment_item_stroke_width">
 
     <androidx.constraintlayout.widget.ConstraintLayout

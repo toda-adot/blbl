@@ -11,7 +11,7 @@
     app:cardBackgroundColor="@color/blbl_settings_left_card_bg"
     app:cardCornerRadius="14dp"
     app:cardElevation="0dp"
-    app:strokeColor="@color/blbl_focus_stroke_focus_only"
+    app:strokeColor="?attr/blblFocusStrokeFocusOnlyColor"
     app:strokeWidth="2dp">
 
     <TextView
@@ -19,6 +19,6 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:padding="18dp"
-        android:textColor="@color/blbl_text"
+        android:textColor="?attr/colorOnSurface"
         android:textSize="18sp" />
 </com.google.android.material.card.MaterialCardView>

@@ -21,6 +21,7 @@ import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.BaseActivity
 import blbl.cat3399.core.ui.GridSpanPolicy
 import blbl.cat3399.core.ui.Immersive
+import blbl.cat3399.core.ui.ThemeColor
 import blbl.cat3399.core.ui.cloneInUserScale
 import blbl.cat3399.core.util.parseBangumiRedirectUrl
 import blbl.cat3399.databinding.ActivityVideoDetailBinding
@@ -149,7 +150,13 @@ class VideoDetailActivity : BaseActivity() {
     private fun showLoadingUi() {
         val root =
             FrameLayout(this).apply {
-                setBackgroundResource(R.color.blbl_bg)
+                setBackgroundColor(
+                    ThemeColor.resolve(
+                        context = this@VideoDetailActivity,
+                        attr = android.R.attr.colorBackground,
+                        fallbackRes = R.color.blbl_bg,
+                    ),
+                )
                 addView(
                     ProgressBar(this@VideoDetailActivity),
                     FrameLayout.LayoutParams(

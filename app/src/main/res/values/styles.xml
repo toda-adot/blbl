@@ -10,6 +10,20 @@
         <item name="cornerSize">12dp</item>
     </style>
 
+    <style name="ThemeOverlay.Blbl.Accent.Violet" parent="ThemeOverlay.MaterialComponents">
+        <item name="blblAccent">@color/blbl_purple</item>
+        <item name="blblAccentContainer">@color/blbl_accent_violet_container</item>
+        <item name="blblAccentWeak">@color/blbl_accent_violet_weak</item>
+        <item name="blblAccentPressed">@color/blbl_accent_violet_pressed</item>
+    </style>
+
+    <style name="ThemeOverlay.Blbl.Accent.TvPink" parent="ThemeOverlay.MaterialComponents">
+        <item name="blblAccent">@color/blbl_accent_tv_pink</item>
+        <item name="blblAccentContainer">@color/blbl_accent_tv_pink_container</item>
+        <item name="blblAccentWeak">@color/blbl_accent_tv_pink_weak</item>
+        <item name="blblAccentPressed">@color/blbl_accent_tv_pink_pressed</item>
+    </style>
+
     <style name="ThemeOverlay.Blbl.TransparentDialog" parent="ThemeOverlay.MaterialComponents.Dialog">
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
@@ -17,8 +31,8 @@
     </style>
 
     <style name="ThemeOverlay.Blbl.MaterialAlertDialog" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
-        <item name="colorPrimary">@color/blbl_blue</item>
-        <item name="colorOnPrimary">@color/blbl_text</item>
+        <item name="colorPrimary">?attr/blblAccent</item>
+        <item name="colorOnPrimary">?attr/colorOnSurface</item>
         <item name="materialAlertDialogTitleTextStyle">@style/Widget.Blbl.MaterialAlertDialog.Title.Text</item>
         <item name="materialAlertDialogBodyTextStyle">@style/Widget.Blbl.MaterialAlertDialog.Body.Text</item>
         <!-- For single-choice dialogs (ListView in AlertDialog): inject via listViewStyle for reliability. -->
@@ -26,19 +40,29 @@
         <item name="android:dropDownListViewStyle">@style/Widget.Blbl.Dialog.ListView</item>
     </style>
 
+    <style name="ThemeOverlay.Blbl.Player.MaterialAlertDialog" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
+        <item name="colorPrimary">@color/blbl_blue</item>
+        <item name="colorOnPrimary">@color/blbl_text</item>
+        <item name="materialAlertDialogTitleTextStyle">@style/Widget.Blbl.MaterialAlertDialog.Title.Text</item>
+        <item name="materialAlertDialogBodyTextStyle">@style/Widget.Blbl.MaterialAlertDialog.Body.Text</item>
+        <!-- Player is frozen: keep the old list selector/focus behavior. -->
+        <item name="android:listViewStyle">@style/Widget.Blbl.Dialog.ListView</item>
+        <item name="android:dropDownListViewStyle">@style/Widget.Blbl.Dialog.ListView</item>
+    </style>
+
     <style name="Widget.Blbl.Dialog.ListView" parent="Widget.AppCompat.ListView">
-        <item name="android:listSelector">@drawable/blbl_focus_list_selector_round</item>
+        <item name="android:listSelector">?attr/blblFocusListSelectorRound</item>
         <item name="android:divider">@android:color/transparent</item>
         <item name="android:dividerHeight">0dp</item>
         <item name="android:cacheColorHint">@android:color/transparent</item>
     </style>
 
     <style name="Widget.Blbl.MaterialAlertDialog.Title.Text" parent="MaterialAlertDialog.MaterialComponents.Title.Text">
-        <item name="android:textColor">@color/blbl_text</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
     </style>
 
     <style name="Widget.Blbl.MaterialAlertDialog.Body.Text" parent="MaterialAlertDialog.MaterialComponents.Body.Text">
-        <item name="android:textColor">@color/blbl_text_secondary</item>
+        <item name="android:textColor">?android:attr/textColorSecondary</item>
     </style>
 
     <style name="TextAppearance.Blbl.Tab" parent="TextAppearance.MaterialComponents.Button">

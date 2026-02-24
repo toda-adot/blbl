@@ -141,6 +141,7 @@ class SettingsRenderer(
             "通用设置" ->
                 listOf(
                     SettingEntry(SettingId.ImageQuality, "图片质量", prefs.imageQuality, null),
+                    SettingEntry(SettingId.ThemePreset, "主题预设", SettingsText.themePresetText(prefs.themePreset), "立即生效；播放器不受影响"),
                     SettingEntry(SettingId.UserAgent, "User-Agent", prefs.userAgent.take(60), null),
                     SettingEntry(SettingId.Ipv4OnlyEnabled, "是否只允许使用IPV4", if (prefs.ipv4OnlyEnabled) "开" else "关", null),
                     SettingEntry(SettingId.GaiaVgate, "风控验证", gaiaVgateStatusText(), "播放被拦截后可在此手动完成人机验证"),

@@ -10,7 +10,7 @@
     app:cardBackgroundColor="@android:color/transparent"
     app:cardCornerRadius="10dp"
     app:cardElevation="0dp"
-    app:strokeColor="@color/blbl_focus_stroke"
+    app:strokeColor="?attr/blblFocusStrokeColor"
     app:strokeWidth="2dp"
     app:cardUseCompatPadding="false">
 
@@ -153,7 +153,7 @@
             android:ellipsize="end"
             android:lines="2"
             android:maxLines="2"
-            android:textColor="@color/blbl_text"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/video_card_title_text_size"
             app:layout_constraintBottom_toTopOf="@id/ll_subtitle"
             app:layout_constraintEnd_toEndOf="parent"
@@ -180,7 +180,7 @@
                 android:layout_weight="1"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:textColor="@color/blbl_text_secondary"
+                android:textColor="?android:attr/textColorSecondary"
                 android:textSize="@dimen/video_card_subtitle_text_size" />
 
             <TextView
@@ -190,7 +190,7 @@
                 android:layout_marginStart="8dp"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:textColor="@color/blbl_text_secondary"
+                android:textColor="?android:attr/textColorSecondary"
                 android:textSize="@dimen/video_card_subtitle_text_size" />
 
         </LinearLayout>

@@ -5,7 +5,6 @@ import android.content.res.ColorStateList
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
-import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
@@ -23,6 +22,7 @@ import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.GridSpanPolicy
 import blbl.cat3399.core.ui.Immersive
+import blbl.cat3399.core.ui.ThemeColor
 import blbl.cat3399.core.ui.cloneInUserScale
 import blbl.cat3399.databinding.ActivityUpDetailBinding
 import blbl.cat3399.feature.login.QrLoginActivity
@@ -31,6 +31,7 @@ import blbl.cat3399.feature.player.PlayerPlaylistItem
 import blbl.cat3399.feature.player.PlayerPlaylistStore
 import blbl.cat3399.feature.video.VideoDetailActivity
 import blbl.cat3399.feature.video.VideoCardAdapter
+import com.google.android.material.R as MaterialR
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -359,15 +360,17 @@ class UpDetailActivity : BaseActivity() {
         binding.btnFollow.text = if (isFollowed) "已关注" else "关注"
 
         val bg =
-            ContextCompat.getColor(
-                this,
-                if (isFollowed) R.color.blbl_surface else R.color.blbl_purple,
-            )
+            if (isFollowed) {
+                ThemeColor.resolve(this, MaterialR.attr.colorSurface, R.color.blbl_surface)
+            } else {
+                ThemeColor.resolve(this, R.attr.blblAccent, R.color.blbl_purple)
+            }
         val fg =
-            ContextCompat.getColor(
-                this,
-                if (isFollowed) R.color.blbl_text_secondary else R.color.blbl_text,
-            )
+            if (isFollowed) {
+                ThemeColor.resolve(this, android.R.attr.textColorSecondary, R.color.blbl_text_secondary)
+            } else {
+                ThemeColor.resolve(this, MaterialR.attr.colorOnSecondary, R.color.blbl_text)
+            }
         binding.btnFollow.backgroundTintList = ColorStateList.valueOf(bg)
         binding.btnFollow.setTextColor(fg)
     }

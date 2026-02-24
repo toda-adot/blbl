@@ -10,7 +10,7 @@
         android:id="@+id/tv_status"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textColor="@color/blbl_text"
+        android:textColor="?attr/colorOnSurface"
         android:textSize="14sp" />
 
     <com.google.android.material.progressindicator.LinearProgressIndicator
@@ -19,7 +19,6 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="14dp"
         android:indeterminate="true"
-        app:indicatorColor="@color/blbl_focus_stroke"
-        app:trackColor="@color/blbl_surface" />
+        app:indicatorColor="?attr/blblAccent"
+        app:trackColor="?attr/colorSurface" />
 </LinearLayout>
-

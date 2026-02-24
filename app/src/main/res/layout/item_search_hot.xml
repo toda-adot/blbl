@@ -9,10 +9,10 @@
     android:focusable="true"
     android:nextFocusLeft="@id/recycler_suggest"
     android:stateListAnimator="@animator/blbl_focus_scale"
-    app:cardBackgroundColor="@color/blbl_surface"
+    app:cardBackgroundColor="?attr/colorSurface"
     app:cardCornerRadius="18dp"
     app:cardElevation="0dp"
-    app:strokeColor="@color/blbl_focus_stroke"
+    app:strokeColor="?attr/blblFocusStrokeColor"
     app:strokeWidth="2dp">
 
     <LinearLayout
@@ -31,7 +31,7 @@
             android:layout_marginEnd="@dimen/search_hot_icon_margin_end"
             android:contentDescription="@string/tab_search"
             android:src="@drawable/ic_hot_fire"
-            android:tint="@color/blbl_text_secondary" />
+            android:tint="?android:attr/textColorSecondary" />
 
         <TextView
             android:id="@+id/tv_keyword"
@@ -41,7 +41,7 @@
             android:ellipsize="end"
             android:maxLines="1"
             android:text="hot"
-            android:textColor="@color/blbl_text"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/search_hot_text_size" />
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

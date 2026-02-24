@@ -9,10 +9,10 @@
     android:focusable="true"
     android:nextFocusLeft="@id/recycler_keys"
     android:stateListAnimator="@animator/blbl_focus_scale"
-    app:cardBackgroundColor="@color/blbl_surface"
+    app:cardBackgroundColor="?attr/colorSurface"
     app:cardCornerRadius="18dp"
     app:cardElevation="0dp"
-    app:strokeColor="@color/blbl_focus_stroke"
+    app:strokeColor="?attr/blblFocusStrokeColor"
     app:strokeWidth="2dp">
 
     <TextView
@@ -24,6 +24,6 @@
         android:paddingHorizontal="@dimen/search_suggest_padding_h"
         android:paddingVertical="@dimen/search_suggest_padding_v"
         android:text="suggest"
-        android:textColor="@color/blbl_text"
+        android:textColor="?attr/colorOnSurface"
         android:textSize="@dimen/search_suggest_text_size" />
 </com.google.android.material.card.MaterialCardView>

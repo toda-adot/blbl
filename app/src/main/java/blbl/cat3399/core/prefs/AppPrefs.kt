@@ -41,6 +41,27 @@ class AppPrefs(context: Context) {
         }
         set(value) = prefs.edit().putFloat(KEY_UI_SCALE_FACTOR, normalizeUiScaleFactor(value)).apply()
 
+    var themePreset: String
+        get() {
+            val raw = prefs.getString(KEY_THEME_PRESET, THEME_PRESET_DEFAULT) ?: THEME_PRESET_DEFAULT
+            val v = raw.trim()
+            return when (v) {
+                THEME_PRESET_DEFAULT,
+                THEME_PRESET_TV_PINK,
+                -> v
+                else -> THEME_PRESET_DEFAULT
+            }
+        }
+        set(value) {
+            val v = value.trim()
+            val normalized =
+                when (v) {
+                    THEME_PRESET_TV_PINK -> THEME_PRESET_TV_PINK
+                    else -> THEME_PRESET_DEFAULT
+                }
+            prefs.edit().putString(KEY_THEME_PRESET, normalized).apply()
+        }
+
     var startupPage: String
         get() = prefs.getString(KEY_STARTUP_PAGE, STARTUP_PAGE_HOME)?.trim()?.takeIf { it.isNotBlank() } ?: STARTUP_PAGE_HOME
         set(value) {
@@ -448,6 +469,9 @@ class AppPrefs(context: Context) {
         const val UI_SCALE_FACTOR_STEP = 0.05f
         const val UI_SCALE_FACTOR_DEFAULT = 1.00f
 
+        const val THEME_PRESET_DEFAULT = "default"
+        const val THEME_PRESET_TV_PINK = "tv_pink"
+
         private const val KEY_DISCLAIMER_ACCEPTED = "disclaimer_accepted"
         private const val KEY_WEB_REFRESH_TOKEN = "web_refresh_token"
         private const val KEY_WEB_COOKIE_REFRESH_CHECKED_EPOCH_DAY = "web_cookie_refresh_checked_epoch_day"
@@ -460,6 +484,7 @@ class AppPrefs(context: Context) {
         private const val KEY_BUVID_ACTIVATED_EPOCH_DAY = "buvid_activated_epoch_day"
         private const val KEY_SIDEBAR_SIZE = "sidebar_size"
         private const val KEY_UI_SCALE_FACTOR = "ui_scale_factor"
+        private const val KEY_THEME_PRESET = "theme_preset"
         private const val KEY_STARTUP_PAGE = "startup_page"
         private const val KEY_IMAGE_QUALITY = "image_quality"
         private const val KEY_DANMAKU_ENABLED = "danmaku_enabled"
