@@ -58,12 +58,25 @@ class SettingsRenderer(
 
     fun showSection(index: Int, keepScroll: Boolean = index == state.currentSectionIndex, focusId: SettingId? = null) {
         val lm = binding.recyclerRight.layoutManager as? LinearLayoutManager
-        val firstVisible = if (keepScroll) lm?.findFirstVisibleItemPosition() ?: RecyclerView.NO_POSITION else RecyclerView.NO_POSITION
-        val topOffset =
-            if (keepScroll && firstVisible != RecyclerView.NO_POSITION) {
-                (binding.recyclerRight.getChildAt(0)?.top ?: 0) - binding.recyclerRight.paddingTop
+        val scrollAnchor =
+            if (keepScroll && lm != null) {
+                val firstVisible = lm.findFirstVisibleItemPosition()
+                if (firstVisible != RecyclerView.NO_POSITION) {
+                    val anchorView = lm.findViewByPosition(firstVisible) ?: binding.recyclerRight.getChildAt(0)
+                    if (anchorView != null) {
+                        val anchorPos =
+                            binding.recyclerRight.getChildAdapterPosition(anchorView).takeIf { it != RecyclerView.NO_POSITION }
+                                ?: firstVisible
+                        val anchorOffset = lm.getDecoratedTop(anchorView) - binding.recyclerRight.paddingTop
+                        anchorPos to anchorOffset
+                    } else {
+                        null
+                    }
+                } else {
+                    null
+                }
             } else {
-                0
+                null
             }
 
         state.currentSectionIndex = index
@@ -76,8 +89,10 @@ class SettingsRenderer(
         val token = ++state.focusRequestToken
         binding.recyclerRight.doOnPreDraw {
             if (token != state.focusRequestToken) return@doOnPreDraw
-            if (keepScroll && lm != null && firstVisible != RecyclerView.NO_POSITION) {
-                lm.scrollToPositionWithOffset(firstVisible, topOffset)
+            if (keepScroll && lm != null) {
+                scrollAnchor?.let { (position, offset) ->
+                    lm.scrollToPositionWithOffset(position, offset)
+                }
             }
             restorePendingFocus()
         }
