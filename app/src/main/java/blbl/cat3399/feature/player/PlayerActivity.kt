@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.app.Activity
 import android.app.Application
+import android.graphics.SurfaceTexture
 import android.os.Bundle
 import android.os.Looper
 import android.os.SystemClock
@@ -12,9 +13,14 @@ import android.view.FocusFinder
 import android.view.GestureDetector
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.Surface
+import android.view.SurfaceHolder
+import android.view.SurfaceView
+import android.view.TextureView
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup.MarginLayoutParams
+import android.widget.FrameLayout
 import android.widget.SeekBar
 import androidx.constraintlayout.widget.ConstraintSet
 import androidx.core.content.ContextCompat
@@ -42,6 +48,7 @@ import androidx.media3.exoplayer.mediacodec.MediaCodecUtil
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import blbl.cat3399.BlblApp
 import blbl.cat3399.R
@@ -65,6 +72,12 @@ import blbl.cat3399.core.ui.popup.PopupHost
 import blbl.cat3399.core.util.Format as BlblFormat
 import blbl.cat3399.feature.following.UpDetailActivity
 import blbl.cat3399.feature.player.danmaku.DanmakuSessionSettings
+import blbl.cat3399.feature.player.engine.BlblPlayerEngine
+import blbl.cat3399.feature.player.engine.ExoPlayerEngine
+import blbl.cat3399.feature.player.engine.IjkPlayerEngine
+import blbl.cat3399.feature.player.engine.IjkPlayerPlugin
+import blbl.cat3399.feature.player.engine.PlayerEngineKind
+import blbl.cat3399.feature.player.engine.PlaybackSource
 import blbl.cat3399.feature.settings.SettingsActivity
 import blbl.cat3399.databinding.ActivityPlayerBinding
 import kotlinx.coroutines.CancellationException
@@ -88,7 +101,11 @@ class PlayerActivity : BaseActivity() {
     override fun shouldRecreateOnUiScaleChange(): Boolean = false
 
     internal lateinit var binding: ActivityPlayerBinding
-    internal var player: ExoPlayer? = null
+    internal var player: BlblPlayerEngine? = null
+    private var ijkRenderView: View? = null
+    private var ijkTextureSurface: Surface? = null
+    internal var pendingStartPositionMs: Long? = null
+    internal var pendingStartPlayWhenReady: Boolean? = null
     internal val sidePanelFocusReturn = FocusReturn()
     internal val commentImageViewerFocusReturn = FocusReturn()
     internal var debugJob: kotlinx.coroutines.Job? = null
@@ -105,6 +122,7 @@ class PlayerActivity : BaseActivity() {
     internal var holdSeekJob: kotlinx.coroutines.Job? = null
     internal var seekHintJob: kotlinx.coroutines.Job? = null
     internal var keyScrubEndJob: kotlinx.coroutines.Job? = null
+    internal var keyScrubPendingSeekToMs: Long? = null
     internal var scrubbing: Boolean = false
     internal var lastInteractionAtMs: Long = 0L
     private var finishOnBackKeyUp: Boolean = false
@@ -438,14 +456,16 @@ class PlayerActivity : BaseActivity() {
 
     private fun requestDecoderReleaseOnStop(reason: String) {
         if (reason.isBlank()) return
+        if (player !is ExoPlayerEngine) return
         decoderReleaseRequestedOnStopReason = reason
         trace?.log("exo:releaseOnStop:request", "reason=$reason")
     }
 
     private fun releaseDecoderNowForBackground(reason: String) {
-        val exo = player ?: return
+        val engine = player ?: return
+        if (engine !is ExoPlayerEngine) return
         if (exitCleanupRequested || isFinishing || isDestroyed) return
-        val pos = exo.currentPosition.coerceAtLeast(0L)
+        val pos = engine.currentPosition.coerceAtLeast(0L)
         trace?.log("exo:releaseOnStop:do", "reason=$reason pos=${pos}ms")
 
         // Stop progress reporting before stopping the player (stop() resets currentPosition).
@@ -459,8 +479,8 @@ class PlayerActivity : BaseActivity() {
         if (::binding.isInitialized) {
             binding.playerView.player = null
         }
-        exo.playWhenReady = false
-        exo.stop()
+        engine.playWhenReady = false
+        engine.stop()
     }
 
     private fun requestExitCleanup(reason: String) {
@@ -632,6 +652,20 @@ class PlayerActivity : BaseActivity() {
             return
         }
 
+        pendingStartPositionMs =
+            intent.getLongExtra(EXTRA_ENGINE_SWITCH_RESUME_POSITION_MS, -1L)
+                .takeIf { intent.hasExtra(EXTRA_ENGINE_SWITCH_RESUME_POSITION_MS) && it >= 0L }
+        pendingStartPlayWhenReady =
+            if (intent.hasExtra(EXTRA_ENGINE_SWITCH_RESUME_PLAY_WHEN_READY)) {
+                intent.getBooleanExtra(EXTRA_ENGINE_SWITCH_RESUME_PLAY_WHEN_READY, true)
+            } else {
+                null
+            }
+        val sessionOverrideJson =
+            intent.getStringExtra(EXTRA_ENGINE_SWITCH_SESSION_JSON)
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+
         session = PlayerSessionSettings(
             playbackSpeed = prefs.playerSpeed,
             preferCodec = prefs.playerPreferredCodec,
@@ -651,95 +685,160 @@ class PlayerActivity : BaseActivity() {
             ),
             debugEnabled = prefs.playerDebugEnabled,
         )
+        if (sessionOverrideJson != null) {
+            session = session.restoreFromEngineSwitchJsonString(sessionOverrideJson)
+        }
 
-        val exo =
-            ExoPlayer.Builder(this)
-                .setVideoChangeFrameRateStrategy(C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF)
-                .build()
-        player = exo
-        binding.playerView.player = exo
-        trace?.log("exo:created")
-        binding.danmakuView.setPositionProvider { exo.currentPosition }
-        binding.danmakuView.setIsPlayingProvider { exo.isPlaying }
-        binding.danmakuView.setPlaybackSpeedProvider { exo.playbackParameters.speed }
+        val desiredEngineKind = PlayerEngineKind.fromPrefValue(prefs.playerEngineKind)
+        val engineKind =
+            if (desiredEngineKind == PlayerEngineKind.IjkPlayer && !IjkPlayerPlugin.isInstalled(this)) {
+                AppToast.showLong(this, "IjkPlayer 插件未安装，已回退到 ExoPlayer")
+                PlayerEngineKind.ExoPlayer
+            } else {
+                desiredEngineKind
+            }
+        val engine: BlblPlayerEngine =
+            when (engineKind) {
+                PlayerEngineKind.IjkPlayer -> {
+                    IjkPlayerEngine(context = this)
+                }
+                PlayerEngineKind.ExoPlayer -> {
+                    ExoPlayerEngine(
+                        context = this,
+                        onTransferHost = { kind, host ->
+                            when (kind) {
+                                DebugStreamKind.VIDEO -> debug.videoTransferHost = host
+                                DebugStreamKind.AUDIO -> debug.audioTransferHost = host
+                                DebugStreamKind.MAIN -> debug.videoTransferHost = host
+                            }
+                        },
+                    )
+                }
+            }
+        player = engine
+        applyRenderForEngine(engine, prefs)
+        val exo = (engine as? ExoPlayerEngine)?.exoPlayer
+        trace?.log("player:created", "kind=${engine.kind.prefValue}")
+        binding.danmakuView.setPositionProvider { player?.currentPosition ?: 0L }
+        binding.danmakuView.setIsPlayingProvider { player?.isPlaying == true }
+        binding.danmakuView.setPlaybackSpeedProvider { player?.playbackSpeed ?: 1.0f }
         binding.danmakuView.setConfigProvider { session.danmaku.toConfig() }
-        configureSubtitleView()
-        exo.setPlaybackSpeed(session.playbackSpeed)
-        applyPlaybackMode(exo)
+        if (engine.capabilities.subtitlesSupported && exo != null) {
+            configureSubtitleView()
+        }
+        engine.setPlaybackSpeed(session.playbackSpeed)
+        applyPlaybackMode(engine)
         // Subtitle enabled state follows session (default from global prefs).
-        applySubtitleEnabled(exo)
-        exo.addListener(object : Player.Listener {
-            override fun onPlayerError(error: PlaybackException) {
-                AppLog.e("Player", "onPlayerError", error)
-                val httpCode = findHttpResponseCode(error)
-                trace?.log("exo:error", "type=${error.errorCodeName} http=${httpCode ?: -1}")
-                if (maybeReloadExpiredUrlAfterResume(error, httpCode)) return
-                val picked = lastPickedDash
-                if (
-                    picked != null &&
-                    !decodeFallbackAttempted &&
-                    picked.shouldAttemptDolbyFallback() &&
-                    isLikelyCodecUnsupported(error)
-                ) {
-                    val nextConstraints = nextPlaybackConstraintsForDolbyFallback(picked)
-                    if (nextConstraints != null) {
-                        decodeFallbackAttempted = true
-                        playbackConstraints = nextConstraints
-                        AppToast.show(this@PlayerActivity, "杜比/无损解码失败，尝试回退到普通轨道…")
-                        reloadStream(keepPosition = true, resetConstraints = false)
+        if (engine.capabilities.subtitlesSupported && exo != null) {
+            applySubtitleEnabled(exo)
+        }
+        engine.addListener(
+            object : BlblPlayerEngine.Listener {
+                override fun onPlayerError(error: Throwable) {
+                    AppLog.e("Player", "onPlayerError", error)
+                    val playbackException = error as? PlaybackException
+                    if (playbackException != null) {
+                        val httpCode = findHttpResponseCode(playbackException)
+                        trace?.log("player:error", "type=${playbackException.errorCodeName} http=${httpCode ?: -1}")
+                        if (maybeReloadExpiredUrlAfterResume(playbackException, httpCode)) return
+                        val picked = lastPickedDash
+                        if (
+                            picked != null &&
+                            !decodeFallbackAttempted &&
+                            picked.shouldAttemptDolbyFallback() &&
+                            isLikelyCodecUnsupported(playbackException)
+                        ) {
+                            val nextConstraints = nextPlaybackConstraintsForDolbyFallback(picked)
+                            if (nextConstraints != null) {
+                                decodeFallbackAttempted = true
+                                playbackConstraints = nextConstraints
+                                AppToast.show(this@PlayerActivity, "杜比/无损解码失败，尝试回退到普通轨道…")
+                                reloadStream(keepPosition = true, resetConstraints = false)
+                                return
+                            }
+                        }
+                        AppToast.show(this@PlayerActivity, "播放失败：${playbackException.errorCodeName}")
                         return
                     }
+                    AppToast.showLong(this@PlayerActivity, "播放失败：${error.message ?: "未知错误"}")
                 }
-                AppToast.show(this@PlayerActivity, "播放失败：${error.errorCodeName}")
-            }
 
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                updatePlayPauseIcon(isPlaying)
-                restartAutoHideTimer()
-                // DanmakuView stops its own vsync loop when playback is paused; kick it on state changes.
-                binding.danmakuView.invalidate()
-                if (isPlaying) {
-                    startReportProgressLoop()
-                } else {
-                    // Avoid flushing on every pause (and also avoid duplicate flushes when `onStop()` calls `pause()`).
-                    stopReportProgressLoop(flush = false, reason = "pause")
-                }
-            }
-
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                updateProgressUi()
-                val state =
-                    when (playbackState) {
-                        Player.STATE_IDLE -> "IDLE"
-                        Player.STATE_BUFFERING -> "BUFFERING"
-                        Player.STATE_READY -> "READY"
-                        Player.STATE_ENDED -> "ENDED"
-                        else -> playbackState.toString()
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    updatePlayPauseIcon(isPlaying)
+                    restartAutoHideTimer()
+                    // DanmakuView stops its own vsync loop when playback is paused; kick it on state changes.
+                    binding.danmakuView.invalidate()
+                    if (isPlaying) {
+                        startReportProgressLoop()
+                    } else {
+                        // Avoid flushing on every pause (and also avoid duplicate flushes when `onStop()` calls `pause()`).
+                        stopReportProgressLoop(flush = false, reason = "pause")
                     }
-                trace?.log("exo:state", "state=$state pos=${exo.currentPosition}ms")
-                if (playbackState == Player.STATE_BUFFERING && debug.lastPlaybackState != Player.STATE_BUFFERING && exo.playWhenReady) {
-                    debug.rebufferCount++
                 }
-                debug.lastPlaybackState = playbackState
-                if (playbackState == Player.STATE_READY && resumeExpiredUrlReloadArmed) {
-                    resumeExpiredUrlReloadArmed = false
-                    trace?.log("exo:resumeReload:disarm", "state=READY")
-                }
-                if (playbackState == Player.STATE_ENDED) {
-                    stopReportProgressLoop(flush = true, reason = "ended")
-                    handlePlaybackEnded(exo)
-                }
-            }
 
-            override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
-                // Rely on ExoPlayer discontinuity callbacks to re-sync danmaku.
-                // Avoid doing "big jump" heuristics inside DanmakuView (which can be triggered by UI jank).
-                binding.danmakuView.notifySeek(newPosition.positionMs)
-                requestDanmakuSegmentsForPosition(newPosition.positionMs, immediate = true)
-            }
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    updateProgressUi()
+                    val state =
+                        when (playbackState) {
+                            Player.STATE_IDLE -> "IDLE"
+                            Player.STATE_BUFFERING -> "BUFFERING"
+                            Player.STATE_READY -> "READY"
+                            Player.STATE_ENDED -> "ENDED"
+                            else -> playbackState.toString()
+                        }
+                    trace?.log("player:state", "state=$state pos=${engine.currentPosition}ms")
+                    if (playbackState == Player.STATE_BUFFERING && debug.lastPlaybackState != Player.STATE_BUFFERING && engine.playWhenReady) {
+                        debug.rebufferCount++
+                    }
+                    debug.lastPlaybackState = playbackState
+                    if (playbackState == Player.STATE_READY && resumeExpiredUrlReloadArmed) {
+                        resumeExpiredUrlReloadArmed = false
+                        trace?.log("player:resumeReload:disarm", "state=READY")
+                    }
+                    if (playbackState == Player.STATE_ENDED) {
+                        stopReportProgressLoop(flush = true, reason = "ended")
+                        handlePlaybackEnded(engine)
+                    }
+                }
 
-        })
-        exo.addAnalyticsListener(object : AnalyticsListener {
+                override fun onPositionDiscontinuity(newPositionMs: Long) {
+                    // Rely on player discontinuity callbacks to re-sync danmaku.
+                    // Avoid doing "big jump" heuristics inside DanmakuView (which can be triggered by UI jank).
+                    binding.danmakuView.notifySeek(newPositionMs)
+                    requestDanmakuSegmentsForPosition(newPositionMs, immediate = true)
+                }
+
+                override fun onVideoSizeChanged(width: Int, height: Int) {
+                    if (engine.kind != PlayerEngineKind.IjkPlayer) return
+                    if (width <= 0 || height <= 0) return
+                    debug.videoInputWidth = width
+                    debug.videoInputHeight = height
+                    binding.ijkAspect.setAspectRatio(width.toFloat() / height.toFloat())
+                    when (val view = ijkRenderView) {
+                        is SurfaceView -> {
+                            runCatching { view.holder.setFixedSize(width, height) }
+                        }
+
+                        is TextureView -> {
+                            val surfaceTexture = view.surfaceTexture
+                            if (surfaceTexture != null) {
+                                runCatching { surfaceTexture.setDefaultBufferSize(width, height) }
+                            }
+                        }
+                    }
+                }
+
+                override fun onRenderedFirstFrame() {
+                    if (engine.kind != PlayerEngineKind.IjkPlayer) return
+                    if (traceFirstFrameLogged) return
+                    traceFirstFrameLogged = true
+                    trace?.log("ijk:firstFrame", "pos=${engine.currentPosition}ms")
+                }
+            },
+        )
+
+        exo?.addAnalyticsListener(
+            object : AnalyticsListener {
             override fun onVideoDecoderInitialized(
                 eventTime: EventTime,
                 decoderName: String,
@@ -774,9 +873,10 @@ class PlayerActivity : BaseActivity() {
             override fun onRenderedFirstFrame(eventTime: EventTime, output: Any, renderTimeMs: Long) {
                 if (traceFirstFrameLogged) return
                 traceFirstFrameLogged = true
-                trace?.log("exo:firstFrame", "pos=${exo.currentPosition}ms")
+                trace?.log("exo:firstFrame", "pos=${engine.currentPosition}ms")
             }
-        })
+        },
+        )
 
         val settingsAdapter = PlayerSettingsAdapter { item -> handleSettingsItemClick(item) }
         binding.recyclerSettings.adapter = settingsAdapter
@@ -821,7 +921,7 @@ class PlayerActivity : BaseActivity() {
         initCommentImageViewer()
         initBottomCardPanel()
 
-        initControls(exo)
+        initControls(engine)
         applyOsdButtonsVisibility()
 
         val uncaughtHandler =
@@ -1379,7 +1479,8 @@ class PlayerActivity : BaseActivity() {
 
     override fun onStart() {
         super.onStart()
-        val exo = player ?: return
+        val engine = player ?: return
+        val exo = (engine as? ExoPlayerEngine)?.exoPlayer ?: return
         if (!resumeAfterDecoderRelease) return
         if (exitCleanupRequested || isFinishing || isDestroyed) return
 
@@ -1393,9 +1494,9 @@ class PlayerActivity : BaseActivity() {
         }
         resumeExpiredUrlReloadArmed = true
         resumeExpiredUrlReloadAttempted = false
-        exo.playWhenReady = false
-        exo.prepare()
-        if (pos > 0L) exo.seekTo(pos)
+        engine.playWhenReady = false
+        engine.prepare()
+        if (pos > 0L) engine.seekTo(pos)
     }
 
     override fun onPause() {
@@ -1465,6 +1566,9 @@ class PlayerActivity : BaseActivity() {
         stopReportProgressLoop(flush = false, reason = "destroy")
         trace?.log("exo:detachView")
         binding.playerView.player = null
+        player?.setVideoSurface(null)
+        ijkTextureSurface?.release()
+        ijkTextureSurface = null
         val preReleaseCostMs = SystemClock.elapsedRealtime() - t0
         if (exitTraceStartAtMs > 0L) {
             exitTraceLog("onDestroy:preRelease", "cost=${preReleaseCostMs}ms")
@@ -1489,7 +1593,7 @@ class PlayerActivity : BaseActivity() {
         super.onDestroy()
     }
 
-    private fun initControls(exo: ExoPlayer) {
+    private fun initControls(engine: BlblPlayerEngine) {
         val detector =
             GestureDetector(
                 this,
@@ -1541,11 +1645,14 @@ class PlayerActivity : BaseActivity() {
                     }
                 },
             )
-        binding.playerView.setOnTouchListener { v, event ->
-            val handled = detector.onTouchEvent(event)
-            if (event.action == MotionEvent.ACTION_UP && handled) v.performClick()
-            handled
-        }
+        val touchListener =
+            View.OnTouchListener { v, event ->
+                val handled = detector.onTouchEvent(event)
+                if (event.action == MotionEvent.ACTION_UP && handled) v.performClick()
+                handled
+            }
+        binding.playerView.setOnTouchListener(touchListener)
+        binding.ijkAspect.setOnTouchListener(touchListener)
 
         binding.btnAdvanced.setOnClickListener {
             toggleSettingsPanel()
@@ -1556,7 +1663,7 @@ class PlayerActivity : BaseActivity() {
         binding.btnFav.setOnClickListener { onFavButtonClicked() }
 
         binding.btnPlayPause.setOnClickListener {
-            if (exo.isPlaying) exo.pause() else exo.play()
+            if (engine.isPlaying) engine.pause() else engine.play()
             setControlsVisible(true)
         }
         binding.btnPrev.setOnClickListener {
@@ -1585,6 +1692,11 @@ class PlayerActivity : BaseActivity() {
         }
 
         binding.btnSubtitle.setOnClickListener {
+            val exo = (engine as? ExoPlayerEngine)?.exoPlayer
+            if (exo == null) {
+                AppToast.show(this, "当前播放器内核不支持字幕")
+                return@setOnClickListener
+            }
             toggleSubtitles(exo)
             setControlsVisible(true)
         }
@@ -1620,7 +1732,7 @@ class PlayerActivity : BaseActivity() {
                     noteUserInteraction()
                     if (seekBar?.isPressed != true) scheduleKeyScrubEnd()
 
-                    val duration = exo.duration.takeIf { it > 0 }
+                    val duration = engine.duration.takeIf { it > 0 } ?: currentViewDurationMs
                     if (duration != null) {
                         val previewPos = (duration * progress) / SEEK_MAX
                         binding.tvTime.text = "${formatHms(previewPos)} / ${formatHms(duration)}"
@@ -1628,7 +1740,15 @@ class PlayerActivity : BaseActivity() {
 
                     if (binding.seekProgress.isFocused && duration != null) {
                         val seekTo = duration * progress / SEEK_MAX
-                        exo.seekTo(seekTo)
+                        val isIjk = engine.kind == PlayerEngineKind.IjkPlayer
+                        if (isIjk && seekBar?.isPressed != true) {
+                            // Key-scrub (focused SeekBar, not touch dragging): defer the actual seek until
+                            // the user stops scrubbing, otherwise ijk/ffmpeg may clamp seeks to the buffered edge.
+                            keyScrubPendingSeekToMs = seekTo
+                        } else {
+                            val isIjkDragging = isIjk && seekBar?.isPressed == true
+                            if (!isIjkDragging) engine.seekTo(seekTo)
+                        }
                     }
                 }
 
@@ -1636,15 +1756,17 @@ class PlayerActivity : BaseActivity() {
                     cancelPendingAutoResume(reason = "user_seek")
                     cancelPendingAutoSkip(reason = "user_seek", markIgnored = true)
                     scrubbing = true
+                    keyScrubPendingSeekToMs = null
                     keyScrubEndJob?.cancel()
                     setControlsVisible(true)
                 }
 
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                    val duration = exo.duration.takeIf { it > 0 } ?: return
+                    val duration = engine.duration.takeIf { it > 0 } ?: currentViewDurationMs ?: return
                     val progress = seekBar?.progress ?: return
                     val seekTo = duration * progress / SEEK_MAX
-                    exo.seekTo(seekTo)
+                    keyScrubPendingSeekToMs = null
+                    engine.seekTo(seekTo)
                     binding.tvTime.text = "${formatHms(seekTo)} / ${formatHms(duration)}"
                     requestDanmakuSegmentsForPosition(seekTo, immediate = true)
                     scrubbing = false
@@ -1655,7 +1777,7 @@ class PlayerActivity : BaseActivity() {
             },
         )
 
-        updatePlayPauseIcon(exo.isPlaying)
+        updatePlayPauseIcon(engine.isPlaying)
         updateSubtitleButton()
         updateDanmakuButton()
         updateUpButton()
@@ -1750,6 +1872,10 @@ class PlayerActivity : BaseActivity() {
         reportProgressJob?.cancel()
         reportProgressJob = null
         if (flush) lifecycleScope.launch { reportProgressOnce(force = true, reason = reason) }
+    }
+
+    internal fun requestReportProgressOnce(reason: String) {
+        lifecycleScope.launch { reportProgressOnce(force = true, reason = reason) }
     }
 
     private suspend fun reportProgressOnce(force: Boolean, reason: String) {
@@ -2111,6 +2237,50 @@ class PlayerActivity : BaseActivity() {
                 return codecs.startsWith("dvhe") || codecs.startsWith("dvh1") || codecs.contains("dovi")
             }
 
+            fun trackInfo(obj: JSONObject): DashTrackInfo {
+                val mimeType =
+                    obj.optString("mimeType", obj.optString("mime_type", ""))
+                        .trim()
+                        .takeIf { it.isNotBlank() }
+                val codecs =
+                    obj.optString("codecs", "")
+                        .trim()
+                        .takeIf { it.isNotBlank() }
+                val bandwidth = obj.optLong("bandwidth", 0L).takeIf { it > 0L }
+                val width = obj.optInt("width", 0).takeIf { it > 0 }
+                val height = obj.optInt("height", 0).takeIf { it > 0 }
+                val frameRate =
+                    obj.optString("frameRate", obj.optString("frame_rate", ""))
+                        .trim()
+                        .takeIf { it.isNotBlank() }
+
+                val segment =
+                    obj.optJSONObject("segment_base")
+                        ?: obj.optJSONObject("segmentBase")
+                val segmentBase =
+                    if (segment != null) {
+                        val initialization = segment.optString("initialization", segment.optString("Initialization", "")).trim()
+                        val indexRange = segment.optString("index_range", segment.optString("indexRange", "")).trim()
+                        if (initialization.isNotBlank() && indexRange.isNotBlank()) {
+                            DashSegmentBase(initialization = initialization, indexRange = indexRange)
+                        } else {
+                            null
+                        }
+                    } else {
+                        null
+                    }
+
+                return DashTrackInfo(
+                    mimeType = mimeType,
+                    codecs = codecs,
+                    bandwidth = bandwidth,
+                    width = width,
+                    height = height,
+                    frameRate = frameRate,
+                    segmentBase = segmentBase,
+                )
+            }
+
             val rawVideoItems = buildList {
                 for (i in 0 until videos.length()) {
                     val v = videos.optJSONObject(i) ?: continue
@@ -2223,11 +2393,15 @@ class PlayerActivity : BaseActivity() {
                 } else {
                     val audioUrlCandidates = baseUrls(audioPicked.obj)
                     val audioUrl = audioUrlCandidates.firstOrNull().orEmpty()
+                    val videoTrackInfo = trackInfo(picked)
+                    val audioTrackInfo = trackInfo(audioPicked.obj)
                     return Playable.Dash(
                         videoUrl = videoUrl,
                         audioUrl = audioUrl,
                         videoUrlCandidates = videoUrlCandidates,
                         audioUrlCandidates = audioUrlCandidates,
+                        videoTrackInfo = videoTrackInfo,
+                        audioTrackInfo = audioTrackInfo,
                         qn = pickedQnFinal,
                         codecid = pickedCodecid,
                         audioId = audioPicked.id,
@@ -2349,11 +2523,11 @@ class PlayerActivity : BaseActivity() {
     }
 
     internal fun reloadStream(keepPosition: Boolean, resetConstraints: Boolean = true, autoPlay: Boolean = true) {
-        val exo = player ?: return
+        val engine = player ?: return
         val cid = currentCid
         val bvid = currentBvid
         if (cid <= 0 || bvid.isBlank()) return
-        val pos = exo.currentPosition
+        val pos = engine.currentPosition
         lifecycleScope.launch {
             try {
                 val (qn, fnval) = playUrlParamsForSession()
@@ -2375,39 +2549,45 @@ class PlayerActivity : BaseActivity() {
                 showRiskControlBypassHintIfNeeded(playJson)
                 lastAvailableQns = parseDashVideoQnList(playJson)
                 lastAvailableAudioIds = parseDashAudioIdList(playJson, constraints = playbackConstraints)
+                if (engine.kind == PlayerEngineKind.IjkPlayer && playable !is Playable.Dash) {
+                    AppToast.showLong(this@PlayerActivity, "IjkPlayer 内核仅支持 DASH（音视频分离）流，请切回 ExoPlayer")
+                    return@launch
+                }
                 when (playable) {
 	                    is Playable.Dash -> {
-	                        lastPickedDash = playable
-	                        debug.cdnHost = runCatching { Uri.parse(playable.videoUrl).host }.getOrNull()
-	                        val videoFactory = createCdnFactory(DebugStreamKind.VIDEO, urlCandidates = playable.videoUrlCandidates)
-	                        val audioFactory = createCdnFactory(DebugStreamKind.AUDIO, urlCandidates = playable.audioUrlCandidates)
-	                        exo.setMediaSource(buildMerged(videoFactory, audioFactory, playable.videoUrl, playable.audioUrl, subtitleConfig))
-	                        applyResolutionFallbackIfNeeded(requestedQn = session.targetQn, actualQn = playable.qn)
-	                        applyAudioFallbackIfNeeded(requestedAudioId = session.targetAudioId, actualAudioId = playable.audioId)
-	                    }
+                        if (engine.kind == PlayerEngineKind.IjkPlayer) {
+                            if (playable.videoTrackInfo.segmentBase == null || playable.audioTrackInfo.segmentBase == null) {
+                                AppToast.showLong(this@PlayerActivity, "IjkPlayer 播放 DASH 需要 segment_base（initialization/index_range），当前流缺失，请切回 ExoPlayer")
+                                return@launch
+                            }
+                        }
+		                        lastPickedDash = playable
+		                        debug.cdnHost = runCatching { Uri.parse(playable.videoUrl).host }.getOrNull()
+		                        engine.setSource(PlaybackSource.Vod(playable = playable, subtitle = subtitleConfig, durationMs = currentViewDurationMs))
+		                        applyResolutionFallbackIfNeeded(requestedQn = session.targetQn, actualQn = playable.qn)
+		                        applyAudioFallbackIfNeeded(requestedAudioId = session.targetAudioId, actualAudioId = playable.audioId)
+		                    }
                     is Playable.VideoOnly -> {
                         lastPickedDash = null
-	                        session = session.copy(actualAudioId = 0)
-	                        (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
-	                        debug.cdnHost = runCatching { Uri.parse(playable.videoUrl).host }.getOrNull()
-	                        val mainFactory = createCdnFactory(DebugStreamKind.MAIN, urlCandidates = playable.videoUrlCandidates)
-	                        exo.setMediaSource(buildProgressive(mainFactory, playable.videoUrl, subtitleConfig))
-	                        applyResolutionFallbackIfNeeded(requestedQn = session.targetQn, actualQn = playable.qn)
-	                    }
+		                        session = session.copy(actualAudioId = 0)
+		                        (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
+		                        debug.cdnHost = runCatching { Uri.parse(playable.videoUrl).host }.getOrNull()
+		                        engine.setSource(PlaybackSource.Vod(playable = playable, subtitle = subtitleConfig, durationMs = currentViewDurationMs))
+		                        applyResolutionFallbackIfNeeded(requestedQn = session.targetQn, actualQn = playable.qn)
+		                    }
                     is Playable.Progressive -> {
                         lastPickedDash = null
-	                        session = session.copy(actualAudioId = 0)
-	                        (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
-	                        debug.cdnHost = runCatching { Uri.parse(playable.url).host }.getOrNull()
-	                        val mainFactory = createCdnFactory(DebugStreamKind.MAIN, urlCandidates = playable.urlCandidates)
-	                        exo.setMediaSource(buildProgressive(mainFactory, playable.url, subtitleConfig))
-	                    }
-	                }
+		                        session = session.copy(actualAudioId = 0)
+		                        (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
+		                        debug.cdnHost = runCatching { Uri.parse(playable.url).host }.getOrNull()
+		                        engine.setSource(PlaybackSource.Vod(playable = playable, subtitle = subtitleConfig, durationMs = currentViewDurationMs))
+		                    }
+		                }
                 schedulePlayUrlAutoRefresh(playable, reason = "reload_stream")
-                exo.prepare()
-                applySubtitleEnabled(exo)
-                if (keepPosition) exo.seekTo(pos)
-                exo.playWhenReady = autoPlay
+                engine.prepare()
+                (engine as? ExoPlayerEngine)?.exoPlayer?.let { applySubtitleEnabled(it) }
+                if (keepPosition) engine.seekTo(pos)
+                engine.playWhenReady = autoPlay
             } catch (t: Throwable) {
                 AppLog.e("Player", "reloadStream failed", t)
                 if (!handlePlayUrlErrorIfNeeded(t)) {
@@ -2592,7 +2772,7 @@ class PlayerActivity : BaseActivity() {
         }
         val now = SystemClock.uptimeMillis()
         if (!immediate && now - lastDanmakuPrefetchAtMs < DANMAKU_PREFETCH_INTERVAL_MS) {
-            if (debug) AppLog.d("Player", "danmaku prefetch skipped: interval")
+//            if (debug) AppLog.d("Player", "danmaku prefetch skipped: interval")
             return
         }
         lastDanmakuPrefetchAtMs = now
@@ -2855,6 +3035,9 @@ class PlayerActivity : BaseActivity() {
         const val EXTRA_AID = "aid"
         const val EXTRA_PLAYLIST_TOKEN = "playlist_token"
         const val EXTRA_PLAYLIST_INDEX = "playlist_index"
+        internal const val EXTRA_ENGINE_SWITCH_RESUME_POSITION_MS = "engine_switch_resume_position_ms"
+        internal const val EXTRA_ENGINE_SWITCH_RESUME_PLAY_WHEN_READY = "engine_switch_resume_play_when_ready"
+        internal const val EXTRA_ENGINE_SWITCH_SESSION_JSON = "engine_switch_session_json"
         private const val ACTIVITY_STACK_GROUP: String = "player_up_flow"
         private const val ACTIVITY_STACK_MAX_DEPTH: Int = 3
         internal const val SEEK_MAX = 10_000
@@ -2880,5 +3063,107 @@ class PlayerActivity : BaseActivity() {
         private const val PLAYURL_AUTO_REFRESH_FALLBACK_DELAY_MS = 55 * 60_000L
         private const val PLAYURL_AUTO_REFRESH_FALLBACK_MIN_DURATION_MS = 60 * 60_000L
         private const val PLAYURL_AUTO_REFRESH_MIN_RELOAD_INTERVAL_MS = 30_000L
+    }
+
+    private fun applyRenderForEngine(engine: BlblPlayerEngine, prefs: AppPrefs) {
+        // Reset any previous IJK render state.
+        binding.ijkAspect.visibility = View.GONE
+        binding.ijkContainer.removeAllViews()
+        ijkRenderView = null
+        ijkTextureSurface?.release()
+        ijkTextureSurface = null
+        engine.setVideoSurface(null)
+
+        val exo = (engine as? ExoPlayerEngine)?.exoPlayer
+        if (engine.kind == PlayerEngineKind.ExoPlayer) {
+            binding.playerView.player = exo
+            return
+        }
+
+        // IJK mode: render via our own Surface/Texture.
+        binding.playerView.player = null
+        binding.ijkAspect.visibility = View.VISIBLE
+        binding.ijkAspect.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT)
+        binding.ijkAspect.setAspectRatio(0f)
+
+        val renderView: View =
+            if (prefs.playerRenderViewType == AppPrefs.PLAYER_RENDER_VIEW_TEXTURE_VIEW) {
+                TextureView(this).apply {
+                    isFocusable = false
+                    isFocusableInTouchMode = false
+                    isClickable = false
+                    isLongClickable = false
+                }
+            } else {
+                SurfaceView(this).apply {
+                    isFocusable = false
+                    isFocusableInTouchMode = false
+                    isClickable = false
+                    isLongClickable = false
+                }
+            }
+
+        binding.ijkContainer.addView(
+            renderView,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                android.view.Gravity.CENTER,
+            ),
+        )
+        ijkRenderView = renderView
+
+        when (renderView) {
+            is SurfaceView -> {
+                val callback =
+                    object : SurfaceHolder.Callback {
+                        override fun surfaceCreated(holder: SurfaceHolder) {
+                            engine.setVideoSurface(holder.surface)
+                        }
+
+                        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                            engine.setVideoSurface(holder.surface)
+                        }
+
+                        override fun surfaceDestroyed(holder: SurfaceHolder) {
+                            engine.setVideoSurface(null)
+                        }
+                    }
+                renderView.holder.addCallback(callback)
+            }
+
+            is TextureView -> {
+                fun setSurface(surfaceTexture: SurfaceTexture?) {
+                    ijkTextureSurface?.release()
+                    ijkTextureSurface = null
+                    if (surfaceTexture == null) {
+                        engine.setVideoSurface(null)
+                        return
+                    }
+                    val surface = Surface(surfaceTexture)
+                    ijkTextureSurface = surface
+                    engine.setVideoSurface(surface)
+                }
+
+                renderView.surfaceTextureListener =
+                    object : TextureView.SurfaceTextureListener {
+                        override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+                            setSurface(surface)
+                        }
+
+                        override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {}
+
+                        override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
+                            setSurface(null)
+                            return true
+                        }
+
+                        override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
+                    }
+                if (renderView.isAvailable) {
+                    setSurface(renderView.surfaceTexture)
+                }
+            }
+        }
     }
 }

@@ -75,6 +75,10 @@ android {
                 "META-INF/*.kotlin_module",
             )
         }
+        jniLibs {
+            // IjkPlayer native libs are shipped as an on-demand plugin (downloaded when needed).
+            excludes += setOf("**/libijkplayer.so")
+        }
     }
 }
 
@@ -94,6 +98,8 @@ protobuf {
 }
 
 dependencies {
+    implementation(files("libs/ijkplayer-cmake-release.aar"))
+
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.12.0")

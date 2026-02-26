@@ -185,6 +185,27 @@ class AppPrefs(context: Context) {
             prefs.edit().putString(KEY_PLAYER_RENDER_VIEW, normalized).apply()
         }
 
+    var playerEngineKind: String
+        get() {
+            val raw = prefs.getString(KEY_PLAYER_ENGINE_KIND, PLAYER_ENGINE_EXO) ?: PLAYER_ENGINE_EXO
+            val v = raw.trim()
+            return when (v) {
+                PLAYER_ENGINE_EXO,
+                PLAYER_ENGINE_IJK,
+                -> v
+                else -> PLAYER_ENGINE_EXO
+            }
+        }
+        set(value) {
+            val v = value.trim()
+            val normalized =
+                when (v) {
+                    PLAYER_ENGINE_IJK -> PLAYER_ENGINE_IJK
+                    else -> PLAYER_ENGINE_EXO
+                }
+            prefs.edit().putString(KEY_PLAYER_ENGINE_KIND, normalized).apply()
+        }
+
     var playerPreferredAudioId: Int
         get() = prefs.getInt(KEY_PLAYER_AUDIO_ID, 30280)
         set(value) = prefs.edit().putInt(KEY_PLAYER_AUDIO_ID, value).apply()
@@ -504,6 +525,7 @@ class AppPrefs(context: Context) {
         private const val KEY_PLAYER_PREFERRED_QN_PORTRAIT = "player_preferred_qn_portrait"
         private const val KEY_PLAYER_CODEC = "player_codec"
         private const val KEY_PLAYER_RENDER_VIEW = "player_render_view"
+        private const val KEY_PLAYER_ENGINE_KIND = "player_engine_kind"
         private const val KEY_PLAYER_AUDIO_ID = "player_audio_id"
         private const val KEY_PLAYER_CDN_PREFERENCE = "player_cdn_preference"
         private const val KEY_SUBTITLE_LANG = "subtitle_lang"
@@ -540,6 +562,9 @@ class AppPrefs(context: Context) {
 
         const val PLAYER_RENDER_VIEW_SURFACE_VIEW = "surface_view"
         const val PLAYER_RENDER_VIEW_TEXTURE_VIEW = "texture_view"
+
+        const val PLAYER_ENGINE_EXO = "exoplayer"
+        const val PLAYER_ENGINE_IJK = "ijkplayer"
 
         const val PLAYER_PLAYBACK_MODE_NONE = "none"
         const val PLAYER_PLAYBACK_MODE_LOOP_ONE = "loop_one"

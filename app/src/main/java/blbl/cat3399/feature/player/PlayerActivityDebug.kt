@@ -8,6 +8,8 @@ import androidx.media3.common.Format
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
+import blbl.cat3399.feature.player.engine.ExoPlayerEngine
+import blbl.cat3399.feature.player.engine.IjkPlayerEngine
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -55,11 +57,16 @@ internal fun PlayerActivity.updateDebugOverlay() {
     binding.danmakuView.setDebugEnabled(enabled)
     debugJob?.cancel()
     if (!enabled) return
-    val exo = player ?: return
+    val engine = player ?: return
     debugJob =
         lifecycleScope.launch {
             while (isActive) {
-                binding.tvDebug.text = buildDebugText(exo)
+                binding.tvDebug.text =
+                    when (engine) {
+                        is ExoPlayerEngine -> buildDebugText(engine.exoPlayer)
+                        is IjkPlayerEngine -> buildDebugText(engine)
+                        else -> "-"
+                    }
                 delay(500)
             }
         }
@@ -83,6 +90,7 @@ private fun PlayerActivity.buildDebugText(exo: ExoPlayer): String {
 
     sb.append("pos=").append(exo.currentPosition).append("ms")
     sb.append(" buf=").append(exo.bufferedPosition).append("ms")
+    sb.append(" dur=").append(exo.duration.takeIf { it > 0 } ?: 0L).append("ms")
     sb.append(" spd=").append(String.format(Locale.US, "%.2f", exo.playbackParameters.speed))
     sb.append('\n')
 
@@ -165,6 +173,118 @@ private fun PlayerActivity.buildDebugText(exo: ExoPlayer): String {
             .append(String.format(Locale.US, "%.2f", dm.drawMaxMs))
         sb.append(" req=").append(dm.lastFrameRequestsActive).append('+').append(dm.lastFrameRequestsPrefetch)
     }
+    return sb.toString()
+}
+
+private fun PlayerActivity.buildDebugText(ijk: IjkPlayerEngine): String {
+    val snap = ijk.debugSnapshot()
+    val sb = StringBuilder()
+    val state =
+        when (snap.playbackState) {
+            Player.STATE_IDLE -> "IDLE"
+            Player.STATE_BUFFERING -> "BUFFERING"
+            Player.STATE_READY -> "READY"
+            Player.STATE_ENDED -> "ENDED"
+            else -> snap.playbackState.toString()
+        }
+    sb.append("state=").append(state)
+    sb.append(" playing=").append(snap.isPlaying)
+    sb.append(" pwr=").append(snap.playWhenReady)
+    sb.append('\n')
+
+    sb.append("pos=").append(snap.positionMs).append("ms")
+    sb.append(" buf=").append(snap.bufferedPositionMs).append("ms")
+    sb.append(" dur=").append(snap.durationMs.coerceAtLeast(0L)).append("ms")
+    sb.append(" spd=").append(String.format(Locale.US, "%.2f", snap.playbackSpeed))
+    sb.append('\n')
+
+    val w = snap.videoWidth?.takeIf { it > 0 } ?: debug.videoInputWidth ?: 0
+    val h = snap.videoHeight?.takeIf { it > 0 } ?: debug.videoInputHeight ?: 0
+    val res = if (w > 0 && h > 0) "${w}x${h}" else "-"
+    sb.append("res=").append(res)
+
+    val fps =
+        formatDebugFps(snap.fpsOutput)
+            ?: formatDebugFps(snap.fpsDecode)
+            ?: "-"
+    sb.append(" fps=").append(fps)
+    val cdnPicked = debug.cdnHost?.trim().takeIf { !it.isNullOrBlank() } ?: "-"
+    if (cdnPicked.length <= 42) {
+        sb.append(" cdn=").append(cdnPicked)
+        sb.append('\n')
+    } else {
+        sb.append('\n')
+        sb.append("cdn=").append(cdnPicked)
+        sb.append('\n')
+    }
+
+    buildDebugDisplayText()?.let { disp ->
+        sb.append("disp=").append(disp)
+        sb.append('\n')
+    }
+
+    val decoder =
+        when (snap.videoDecoder) {
+            tv.danmaku.ijk.media.player.IjkMediaPlayer.FFP_PROPV_DECODER_MEDIACODEC -> "MediaCodec"
+            tv.danmaku.ijk.media.player.IjkMediaPlayer.FFP_PROPV_DECODER_AVCODEC -> "avcodec"
+            else -> "-"
+        }
+    sb.append("decoder=").append(decoder)
+    if (snap.bitRate > 0) sb.append(" br=").append(String.format(Locale.US, "%.1f", snap.bitRate / 1000f)).append("kbps")
+    sb.append('\n')
+
+    if (snap.tcpSpeed > 0) {
+        val mbps = snap.tcpSpeed.toDouble() * 8.0 / 1_000_000.0
+        sb.append("net=").append(String.format(Locale.US, "%.2f", mbps)).append("Mbps")
+    } else {
+        sb.append("net=-")
+    }
+    sb.append(" vCache=").append(snap.videoCachedDurationMs.coerceAtLeast(0L)).append("ms")
+    sb.append(" aCache=").append(snap.audioCachedDurationMs.coerceAtLeast(0L)).append("ms")
+    sb.append('\n')
+
+    runCatching { binding.danmakuView.getDebugStats() }.getOrNull()?.let { dm ->
+        sb.append("dm=").append(if (dm.configEnabled) "on" else "off")
+        sb.append(" fps=").append(String.format(Locale.US, "%.1f", dm.drawFps))
+        sb.append(" act=").append(dm.lastFrameActive)
+        sb.append(" pend=").append(dm.lastFramePending)
+        sb.append(" hit=").append(dm.lastFrameCachedDrawn).append('/').append(dm.lastFrameActive)
+        sb.append(" fb=").append(dm.lastFrameFallbackDrawn)
+        sb.append(" q=").append(dm.queueDepth)
+        if (dm.invalidateFull) {
+            sb.append(" inv=full")
+        } else {
+            sb.append(" inv=").append(dm.invalidateTopPx).append('-').append(dm.invalidateBottomPx)
+        }
+        sb.append('\n')
+
+        val poolMb = dm.poolBytes.toDouble() / (1024.0 * 1024.0)
+        val poolMaxMb = dm.poolMaxBytes.toDouble() / (1024.0 * 1024.0)
+        sb.append("bmp cache=").append(dm.cacheItems)
+        sb.append(" rendering=").append(dm.renderingItems)
+        sb.append(" pool=").append(dm.poolItems)
+        sb.append('(')
+            .append(String.format(Locale.US, "%.1f", poolMb))
+            .append('/')
+            .append(String.format(Locale.US, "%.0f", poolMaxMb))
+            .append("MB)")
+        sb.append(" new=").append(dm.bitmapCreated)
+        sb.append(" reuse=").append(dm.bitmapReused)
+        sb.append(" put=").append(dm.bitmapPutToPool)
+        sb.append(" rec=").append(dm.bitmapRecycled)
+        sb.append('\n')
+
+        sb.append("dm ms upd=")
+            .append(String.format(Locale.US, "%.2f", dm.updateAvgMs))
+            .append('/')
+            .append(String.format(Locale.US, "%.2f", dm.updateMaxMs))
+        sb.append(" draw=")
+            .append(String.format(Locale.US, "%.2f", dm.drawAvgMs))
+            .append('/')
+            .append(String.format(Locale.US, "%.2f", dm.drawMaxMs))
+        sb.append(" req=").append(dm.lastFrameRequestsActive).append('+').append(dm.lastFrameRequestsPrefetch)
+    }
+
     return sb.toString()
 }
 

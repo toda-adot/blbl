@@ -4,10 +4,10 @@ import android.os.SystemClock
 import android.view.View
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.api.SponsorBlockApi
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.feature.player.engine.BlblPlayerEngine
 import java.util.LinkedHashMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -368,7 +368,7 @@ internal fun PlayerActivity.maybeScheduleAutoResume(
     if (!BiliClient.prefs.playerAutoResumeEnabled) return
     if (autoResumeCancelledByUser) return
     if (playbackToken != autoResumeToken) return
-    val exo = player ?: return
+    val engine = player ?: return
 
     val strictCidMatch = isMultiPagePlaylist(partsListItems, currentBvid)
     extractResumeCandidateFromPlayJson(playJson)?.let { cand ->
@@ -378,7 +378,7 @@ internal fun PlayerActivity.maybeScheduleAutoResume(
             lastCid != null && lastCid != cid -> Unit
             strictCidMatch && lastCid == null -> Unit
             else -> {
-                scheduleAutoResume(exo = exo, candidate = cand, playbackToken = playbackToken)
+                scheduleAutoResume(engine = engine, candidate = cand, playbackToken = playbackToken)
                 return
             }
         }
@@ -396,11 +396,11 @@ internal fun PlayerActivity.maybeScheduleAutoResume(
             if (lastCid != null && lastCid != cid) return@launch
             if (strictCidMatch && lastCid == null) return@launch
             val cand = extractResumeCandidateFromPlayerWbiV2(playerJson) ?: return@launch
-            scheduleAutoResume(exo = exo, candidate = cand, playbackToken = playbackToken)
+            scheduleAutoResume(engine = engine, candidate = cand, playbackToken = playbackToken)
         }
 }
 
-internal fun PlayerActivity.scheduleAutoResume(exo: ExoPlayer, candidate: ResumeCandidate, playbackToken: Int) {
+internal fun PlayerActivity.scheduleAutoResume(engine: BlblPlayerEngine, candidate: ResumeCandidate, playbackToken: Int) {
     if (autoResumeCancelledByUser) return
     autoResumeJob?.cancel()
     dismissAutoResumeHint()
@@ -409,7 +409,7 @@ internal fun PlayerActivity.scheduleAutoResume(exo: ExoPlayer, candidate: Resume
     val delayMs = 3_000L
     val showAtMs = SystemClock.elapsedRealtime()
     val seekNotBeforeAtMs = showAtMs + delayMs
-    val previewDurationMs = exo.duration.takeIf { it > 0 } ?: currentViewDurationMs
+    val previewDurationMs = engine.duration.takeIf { it > 0 } ?: currentViewDurationMs
     val previewTargetMs = normalizeResumePositionMs(candidate.rawTime, candidate.rawTimeUnitHint, previewDurationMs)
     if (previewTargetMs == null) return
     if (!shouldAutoResumeTo(previewTargetMs, previewDurationMs)) return
@@ -424,7 +424,7 @@ internal fun PlayerActivity.scheduleAutoResume(exo: ExoPlayer, candidate: Resume
                 if (autoResumeCancelledByUser) return@launch
                 if (playbackToken != autoResumeToken) return@launch
                 val p = player ?: return@launch
-                if (p !== exo) return@launch
+                if (p !== engine) return@launch
                 val state = p.playbackState
                 if (state == Player.STATE_READY) break
                 if (state == Player.STATE_ENDED) return@launch
@@ -438,7 +438,7 @@ internal fun PlayerActivity.scheduleAutoResume(exo: ExoPlayer, candidate: Resume
             if (autoResumeCancelledByUser) return@launch
             if (playbackToken != autoResumeToken) return@launch
             val p = player ?: return@launch
-            if (p !== exo) return@launch
+            if (p !== engine) return@launch
 
             val durationMs = p.duration.takeIf { it > 0 } ?: currentViewDurationMs
             val targetMs = normalizeResumePositionMs(candidate.rawTime, candidate.rawTimeUnitHint, durationMs) ?: return@launch

@@ -1,15 +1,22 @@
 package blbl.cat3399.feature.live
 
 import android.net.Uri
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.TypedValue
 import android.view.KeyEvent
 import android.view.LayoutInflater
+import android.graphics.SurfaceTexture
+import android.view.Surface
+import android.view.SurfaceHolder
+import android.view.SurfaceView
+import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.MarginLayoutParams
+import android.widget.FrameLayout
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
@@ -17,8 +24,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.okhttp.OkHttpDataSource
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.ui.AspectRatioFrameLayout
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.api.BiliApiException
 import blbl.cat3399.core.log.AppLog
@@ -40,6 +46,13 @@ import blbl.cat3399.feature.player.PlayerOsdSizing
 import blbl.cat3399.feature.player.PlayerSettingsAdapter
 import blbl.cat3399.feature.player.PlayerUiMode
 import blbl.cat3399.feature.player.danmaku.DanmakuSessionSettings
+import blbl.cat3399.feature.player.engine.BlblPlayerEngine
+import blbl.cat3399.feature.player.engine.ExoPlayerEngine
+import blbl.cat3399.feature.player.engine.IjkPlayerPlugin
+import blbl.cat3399.feature.player.engine.IjkPlayerPluginUi
+import blbl.cat3399.feature.player.engine.IjkPlayerEngine
+import blbl.cat3399.feature.player.engine.PlayerEngineKind
+import blbl.cat3399.feature.player.engine.PlaybackSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -51,7 +64,9 @@ class LivePlayerActivity : BaseActivity() {
     override fun shouldRecreateOnUiScaleChange(): Boolean = false
 
     private lateinit var binding: ActivityPlayerBinding
-    private var player: ExoPlayer? = null
+    private var player: BlblPlayerEngine? = null
+    private var ijkRenderView: View? = null
+    private var ijkTextureSurface: Surface? = null
     private val settingsPanelReturnFocus = FocusReturn()
     private var autoHideJob: Job? = null
     private var debugJob: Job? = null
@@ -127,30 +142,52 @@ class LivePlayerActivity : BaseActivity() {
 
         binding.btnBack.setOnClickListener { finish() }
 
-        val exo =
-            ExoPlayer.Builder(this)
-                .setVideoChangeFrameRateStrategy(C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF)
-                .build()
-        player = exo
-        binding.playerView.player = exo
+        val desiredEngineKind = PlayerEngineKind.fromPrefValue(prefs.playerEngineKind)
+        val engineKind =
+            if (desiredEngineKind == PlayerEngineKind.IjkPlayer && !IjkPlayerPlugin.isInstalled(this)) {
+                AppToast.showLong(this, "IjkPlayer 插件未安装，已回退到 ExoPlayer")
+                PlayerEngineKind.ExoPlayer
+            } else {
+                desiredEngineKind
+            }
+        val engine: BlblPlayerEngine =
+            when (engineKind) {
+                PlayerEngineKind.IjkPlayer -> {
+                    IjkPlayerEngine(context = this)
+                }
+                PlayerEngineKind.ExoPlayer -> ExoPlayerEngine(context = this)
+            }
+        player = engine
+        applyRenderForEngine(engine, prefs)
         liveDanmakuBaseUptimeMs = SystemClock.elapsedRealtime()
         liveDanmakuLastAppendMs = Int.MIN_VALUE
         binding.danmakuView.setPositionProvider { liveDanmakuPositionMs() }
-        binding.danmakuView.setIsPlayingProvider { exo.isPlaying }
-        binding.danmakuView.setPlaybackSpeedProvider { exo.playbackParameters.speed }
+        binding.danmakuView.setIsPlayingProvider { player?.isPlaying == true }
+        binding.danmakuView.setPlaybackSpeedProvider { player?.playbackSpeed ?: 1.0f }
         binding.danmakuView.setConfigProvider { session.danmaku.toConfig() }
 
-        exo.addListener(
-            object : Player.Listener {
-                override fun onPlayerError(error: PlaybackException) {
+        engine.addListener(
+            object : BlblPlayerEngine.Listener {
+                override fun onPlayerError(error: Throwable) {
                     AppLog.e("LivePlayer", "onPlayerError", error)
-                    if (tryAutoFailoverOnError(error)) return
-                    AppToast.show(this@LivePlayerActivity, "播放失败：${error.errorCodeName}")
+                    val e = error as? PlaybackException
+                    if (e != null) {
+                        if (tryAutoFailoverOnError(e)) return
+                        AppToast.show(this@LivePlayerActivity, "播放失败：${e.errorCodeName}")
+                        return
+                    }
+                    AppToast.showLong(this@LivePlayerActivity, "播放失败：${error.message ?: "未知错误"}")
                 }
 
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     updatePlayPauseIcon(isPlaying)
                     noteUserInteraction()
+                }
+
+                override fun onVideoSizeChanged(width: Int, height: Int) {
+                    if (engine.kind != PlayerEngineKind.IjkPlayer) return
+                    if (width <= 0 || height <= 0) return
+                    binding.ijkAspect.setAspectRatio(width.toFloat() / height.toFloat())
                 }
             },
         )
@@ -223,10 +260,13 @@ class LivePlayerActivity : BaseActivity() {
         autoFailoverInFlight = false
         autoHideJob?.cancel()
         binding.playerView.player = null
+        player?.setVideoSurface(null)
+        ijkTextureSurface?.release()
+        ijkTextureSurface = null
         val releaseStart = SystemClock.elapsedRealtime()
         player?.release()
         val releaseCostMs = SystemClock.elapsedRealtime() - releaseStart
-        AppLog.i("LivePlayer", "exo:release:done cost=${releaseCostMs}ms")
+        AppLog.i("LivePlayer", "player:release:done cost=${releaseCostMs}ms")
         player = null
         val totalCostMs = SystemClock.elapsedRealtime() - t0
         AppLog.i("LivePlayer", "activity:onDestroy:beforeSuper cost=${totalCostMs}ms")
@@ -239,6 +279,107 @@ class LivePlayerActivity : BaseActivity() {
         }
         super.finish()
         applyCloseTransitionNoAnim()
+    }
+
+    private fun applyRenderForEngine(engine: BlblPlayerEngine, prefs: AppPrefs) {
+        // Reset any previous IJK render state.
+        binding.ijkAspect.visibility = View.GONE
+        binding.ijkContainer.removeAllViews()
+        ijkRenderView = null
+        ijkTextureSurface?.release()
+        ijkTextureSurface = null
+        engine.setVideoSurface(null)
+
+        val exo = (engine as? ExoPlayerEngine)?.exoPlayer
+        if (engine.kind == PlayerEngineKind.ExoPlayer) {
+            binding.playerView.player = exo
+            return
+        }
+
+        // IJK mode: render via our own Surface/Texture.
+        binding.playerView.player = null
+        binding.ijkAspect.visibility = View.VISIBLE
+        binding.ijkAspect.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT)
+        binding.ijkAspect.setAspectRatio(0f)
+
+        val renderView: View =
+            if (prefs.playerRenderViewType == AppPrefs.PLAYER_RENDER_VIEW_TEXTURE_VIEW) {
+                TextureView(this).apply {
+                    isFocusable = false
+                    isFocusableInTouchMode = false
+                    isClickable = false
+                    isLongClickable = false
+                }
+            } else {
+                SurfaceView(this).apply {
+                    isFocusable = false
+                    isFocusableInTouchMode = false
+                    isClickable = false
+                    isLongClickable = false
+                }
+            }
+
+        binding.ijkContainer.addView(
+            renderView,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        ijkRenderView = renderView
+
+        when (renderView) {
+            is SurfaceView -> {
+                val callback =
+                    object : SurfaceHolder.Callback {
+                        override fun surfaceCreated(holder: SurfaceHolder) {
+                            engine.setVideoSurface(holder.surface)
+                        }
+
+                        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                            engine.setVideoSurface(holder.surface)
+                        }
+
+                        override fun surfaceDestroyed(holder: SurfaceHolder) {
+                            engine.setVideoSurface(null)
+                        }
+                    }
+                renderView.holder.addCallback(callback)
+            }
+
+            is TextureView -> {
+                fun setSurface(surfaceTexture: SurfaceTexture?) {
+                    ijkTextureSurface?.release()
+                    ijkTextureSurface = null
+                    if (surfaceTexture == null) {
+                        engine.setVideoSurface(null)
+                        return
+                    }
+                    val surface = Surface(surfaceTexture)
+                    ijkTextureSurface = surface
+                    engine.setVideoSurface(surface)
+                }
+
+                renderView.surfaceTextureListener =
+                    object : TextureView.SurfaceTextureListener {
+                        override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+                            setSurface(surface)
+                        }
+
+                        override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {}
+
+                        override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
+                            setSurface(null)
+                            return true
+                        }
+
+                        override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
+                    }
+                if (renderView.isAvailable) {
+                    setSurface(renderView.surfaceTexture)
+                }
+            }
+        }
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -368,6 +509,7 @@ class LivePlayerActivity : BaseActivity() {
                 when (item.title) {
                     "清晰度" -> showQualityDialog()
                     "线路选择" -> showLineDialog()
+                    "播放器内核" -> showPlayerEngineDialog()
                     else -> AppToast.show(this, "暂未实现：${item.title}")
                 }
             }
@@ -419,12 +561,52 @@ class LivePlayerActivity : BaseActivity() {
                 ?.getOrNull((session.lineOrder - 1).coerceAtLeast(0))
                 ?.let { "线路 ${it.order}" }
                 ?: "自动"
+        val engineLabel =
+            when (player?.kind ?: PlayerEngineKind.fromPrefValue(BiliClient.prefs.playerEngineKind)) {
+                PlayerEngineKind.IjkPlayer -> "IjkPlayer"
+                PlayerEngineKind.ExoPlayer -> "ExoPlayer"
+            }
         val list =
             listOf(
                 PlayerSettingsAdapter.SettingItem("清晰度", qLabel),
                 PlayerSettingsAdapter.SettingItem("线路选择", lineLabel),
+                PlayerSettingsAdapter.SettingItem("播放器内核", engineLabel),
             )
         (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.submit(list)
+    }
+
+    private fun showPlayerEngineDialog() {
+        val currentKind = player?.kind ?: PlayerEngineKind.fromPrefValue(BiliClient.prefs.playerEngineKind)
+        val items = listOf("ExoPlayer（默认）", "IjkPlayer")
+        val checked = if (currentKind == PlayerEngineKind.IjkPlayer) 1 else 0
+        AppPopup.singleChoice(
+            context = this,
+            title = "播放器内核",
+            items = items,
+            checkedIndex = checked,
+        ) { which, _ ->
+            val picked = if (which == 1) PlayerEngineKind.IjkPlayer else PlayerEngineKind.ExoPlayer
+            if (picked == currentKind) return@singleChoice
+            fun doSwitch() {
+                BiliClient.prefs.playerEngineKind = picked.prefValue
+                val restart =
+                    Intent(this, LivePlayerActivity::class.java).apply {
+                        putExtra(EXTRA_ROOM_ID, roomId)
+                        putExtra(EXTRA_TITLE, roomTitle)
+                        putExtra(EXTRA_UNAME, roomUname)
+                    }
+                startActivity(restart)
+                finish()
+            }
+
+            if (picked == PlayerEngineKind.IjkPlayer) {
+                IjkPlayerPluginUi.ensureInstalled(this) {
+                    doSwitch()
+                }
+            } else {
+                doSwitch()
+            }
+        }
     }
 
     private fun toggleControls() {
@@ -589,7 +771,7 @@ class LivePlayerActivity : BaseActivity() {
     }
 
     private suspend fun loadAndPlay(initial: Boolean) {
-        val exo = player ?: return
+        val engine = player ?: return
         try {
             val info = BiliApi.liveRoomInfo(roomId)
             realRoomId = info.roomId
@@ -617,12 +799,9 @@ class LivePlayerActivity : BaseActivity() {
                     ?: play.lines.firstOrNull()
             if (pickedLine == null) error("No playable live url")
 
-            val factory = OkHttpDataSource.Factory(BiliClient.cdnOkHttp)
-            val mediaSourceFactory = DefaultMediaSourceFactory(factory)
-            val mediaSource = mediaSourceFactory.createMediaSource(MediaItem.fromUri(Uri.parse(pickedLine.url)))
-            exo.setMediaSource(mediaSource)
-            exo.prepare()
-            exo.playWhenReady = true
+            engine.setSource(PlaybackSource.Live(url = pickedLine.url))
+            engine.prepare()
+            engine.playWhenReady = true
 
             if (initial) connectDanmaku()
         } catch (t: Throwable) {

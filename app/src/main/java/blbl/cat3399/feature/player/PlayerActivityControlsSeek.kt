@@ -6,10 +6,11 @@ import android.view.View
 import android.view.ViewConfiguration
 import androidx.constraintlayout.widget.ConstraintSet
 import androidx.lifecycle.lifecycleScope
-import androidx.media3.exoplayer.ExoPlayer
 import blbl.cat3399.R
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.prefs.AppPrefs
+import blbl.cat3399.feature.player.engine.BlblPlayerEngine
+import blbl.cat3399.feature.player.engine.PlayerEngineKind
 import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
@@ -220,7 +221,15 @@ internal fun PlayerActivity.scheduleKeyScrubEnd() {
     keyScrubEndJob =
         lifecycleScope.launch {
             delay(PlayerActivity.KEY_SCRUB_END_DELAY_MS)
+            val pendingSeekTo = keyScrubPendingSeekToMs
+            keyScrubPendingSeekToMs = null
             scrubbing = false
+            val engine = player
+            if (pendingSeekTo != null && engine?.kind == PlayerEngineKind.IjkPlayer) {
+                engine.seekTo(pendingSeekTo)
+                requestDanmakuSegmentsForPosition(pendingSeekTo, immediate = true)
+                requestReportProgressOnce(reason = "user_seek_end")
+            }
             restartAutoHideTimer()
         }
 }
@@ -379,7 +388,7 @@ internal fun PlayerActivity.startHoldSeek(direction: Int, showControls: Boolean)
     // Speed-hold seek is forward-only; long-press LEFT is handled by preview-scrub (startHoldScrub).
     if (direction <= 0) return
     if (holdSeekJob?.isActive == true) return
-    val exo = player ?: return
+    val engine = player ?: return
 
     if (showControls) {
         if (osdMode != PlayerActivity.OsdMode.Full && !isSidePanelVisible()) setControlsVisible(true) else noteUserInteraction()
@@ -389,22 +398,22 @@ internal fun PlayerActivity.startHoldSeek(direction: Int, showControls: Boolean)
 
     val holdSpeed = holdSeekSpeed()
     val holdMode = BiliClient.prefs.playerHoldSeekMode
-    holdPrevSpeed = exo.playbackParameters.speed
-    holdPrevPlayWhenReady = exo.playWhenReady
+    holdPrevSpeed = engine.playbackSpeed
+    holdPrevPlayWhenReady = engine.playWhenReady
     holdScrubPreviewPosMs = null
     if (holdMode == AppPrefs.PLAYER_HOLD_SEEK_MODE_SCRUB) {
-        startHoldScrubSeek(exo = exo, direction = direction, speed = holdSpeed)
+        startHoldScrubSeek(engine = engine, direction = direction, speed = holdSpeed)
         return
     }
     showSeekHoldHint(direction, holdSpeed)
-    exo.setPlaybackSpeed(holdSpeed)
-    exo.playWhenReady = true
+    engine.setPlaybackSpeed(holdSpeed)
+    engine.playWhenReady = true
     holdSeekJob = lifecycleScope.launch { kotlinx.coroutines.awaitCancellation() }
 }
 
 internal fun PlayerActivity.startHoldScrub(direction: Int, showControls: Boolean) {
     if (holdSeekJob?.isActive == true) return
-    val exo = player ?: return
+    val engine = player ?: return
 
     if (showControls) {
         if (osdMode != PlayerActivity.OsdMode.Full && !isSidePanelVisible()) setControlsVisible(true) else noteUserInteraction()
@@ -413,20 +422,20 @@ internal fun PlayerActivity.startHoldScrub(direction: Int, showControls: Boolean
     }
 
     val holdSpeed = holdSeekSpeed()
-    holdPrevSpeed = exo.playbackParameters.speed
-    holdPrevPlayWhenReady = exo.playWhenReady
+    holdPrevSpeed = engine.playbackSpeed
+    holdPrevPlayWhenReady = engine.playWhenReady
     holdScrubPreviewPosMs = null
-    startHoldScrubSeek(exo = exo, direction = direction, speed = holdSpeed)
+    startHoldScrubSeek(engine = engine, direction = direction, speed = holdSpeed)
 }
 
-internal fun PlayerActivity.startHoldScrubSeek(exo: ExoPlayer, direction: Int, speed: Float) {
-    val duration = exo.duration.takeIf { it > 0 } ?: currentViewDurationMs ?: 0L
+internal fun PlayerActivity.startHoldScrubSeek(engine: BlblPlayerEngine, direction: Int, speed: Float) {
+    val duration = engine.duration.takeIf { it > 0 } ?: currentViewDurationMs ?: 0L
     if (duration <= 0L) {
         // Unknown duration: cannot show an actual progress bar scrub; fall back to speed-hold.
         if (direction <= 0) return
         showSeekHoldHint(direction, speed)
-        exo.setPlaybackSpeed(speed)
-        exo.playWhenReady = true
+        engine.setPlaybackSpeed(speed)
+        engine.playWhenReady = true
         holdSeekJob = lifecycleScope.launch { kotlinx.coroutines.awaitCancellation() }
         return
     }
@@ -435,11 +444,11 @@ internal fun PlayerActivity.startHoldScrubSeek(exo: ExoPlayer, direction: Int, s
     keyScrubEndJob?.cancel()
     keyScrubEndJob = null
 
-    exo.pause()
+    engine.pause()
 
-    val initial = exo.currentPosition.coerceIn(0L, duration)
+    val initial = engine.currentPosition.coerceIn(0L, duration)
     holdScrubPreviewPosMs = initial
-    showSeekOsd(posMs = initial, durationMs = duration, bufferedPosMs = exo.bufferedPosition)
+    showSeekOsd(posMs = initial, durationMs = duration, bufferedPosMs = engine.bufferedPosition)
 
     val tickMs = PlayerActivity.HOLD_SCRUB_TICK_MS
     // Always use the "scrub progress bar" algorithm for preview scrubbing
@@ -452,14 +461,14 @@ internal fun PlayerActivity.startHoldScrubSeek(exo: ExoPlayer, direction: Int, s
                 val current = holdScrubPreviewPosMs ?: initial
                 val next = (current + deltaMs).coerceIn(0L, duration)
                 holdScrubPreviewPosMs = next
-                showSeekOsd(posMs = next, durationMs = duration, bufferedPosMs = exo.bufferedPosition)
+                showSeekOsd(posMs = next, durationMs = duration, bufferedPosMs = engine.bufferedPosition)
                 delay(tickMs)
             }
         }
 }
 
 internal fun PlayerActivity.stopHoldSeek() {
-    val exo = player
+    val engine = player
     val scrubTarget = holdScrubPreviewPosMs
     holdScrubPreviewPosMs = null
     if (scrubTarget != null) {
@@ -469,15 +478,15 @@ internal fun PlayerActivity.stopHoldSeek() {
     }
     holdSeekJob?.cancel()
     holdSeekJob = null
-    if (exo != null) {
-        exo.setPlaybackSpeed(holdPrevSpeed)
+    if (engine != null) {
+        engine.setPlaybackSpeed(holdPrevSpeed)
         if (scrubTarget != null) {
-            exo.seekTo(scrubTarget)
-            val duration = exo.duration.takeIf { it > 0 } ?: currentViewDurationMs ?: 0L
-            if (duration > 0L) showSeekOsd(posMs = scrubTarget, durationMs = duration, bufferedPosMs = exo.bufferedPosition)
+            engine.seekTo(scrubTarget)
+            val duration = engine.duration.takeIf { it > 0 } ?: currentViewDurationMs ?: 0L
+            if (duration > 0L) showSeekOsd(posMs = scrubTarget, durationMs = duration, bufferedPosMs = engine.bufferedPosition)
         }
-        exo.playWhenReady = holdPrevPlayWhenReady
-        val pos = (scrubTarget ?: exo.currentPosition).coerceAtLeast(0L)
+        engine.playWhenReady = holdPrevPlayWhenReady
+        val pos = (scrubTarget ?: engine.currentPosition).coerceAtLeast(0L)
         requestDanmakuSegmentsForPosition(pos, immediate = true)
     }
     scheduleHideSeekHint()

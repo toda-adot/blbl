@@ -17,6 +17,22 @@
         app:surface_type="surface_view"
         app:use_controller="false" />
 
+    <androidx.media3.ui.AspectRatioFrameLayout
+        android:id="@+id/ijk_aspect"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@id/player_view"
+        app:layout_constraintEnd_toEndOf="@id/player_view"
+        app:layout_constraintStart_toStartOf="@id/player_view"
+        app:layout_constraintTop_toTopOf="@id/player_view">
+
+        <FrameLayout
+            android:id="@+id/ijk_container"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+    </androidx.media3.ui.AspectRatioFrameLayout>
+
     <blbl.cat3399.feature.player.danmaku.DanmakuView
         android:id="@+id/danmaku_view"
         android:layout_width="0dp"

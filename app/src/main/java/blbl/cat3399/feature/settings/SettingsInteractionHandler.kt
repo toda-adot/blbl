@@ -22,6 +22,7 @@ import blbl.cat3399.core.ui.popup.AppPopup
 import blbl.cat3399.core.ui.popup.PopupAction
 import blbl.cat3399.core.ui.popup.PopupActionRole
 import blbl.cat3399.core.update.ApkUpdater
+import blbl.cat3399.feature.player.engine.IjkPlayerPluginUi
 import blbl.cat3399.feature.risk.GaiaVgateActivity
 import blbl.cat3399.ui.MainActivity
 import kotlinx.coroutines.CancellationException
@@ -601,6 +602,38 @@ class SettingsInteractionHandler(
                             "TextureView" -> blbl.cat3399.core.prefs.AppPrefs.PLAYER_RENDER_VIEW_TEXTURE_VIEW
                             else -> blbl.cat3399.core.prefs.AppPrefs.PLAYER_RENDER_VIEW_SURFACE_VIEW
                         }
+                    renderer.refreshSection(entry.id)
+                }
+            }
+
+            SettingId.PlayerEngineKind -> {
+                val options = listOf("ExoPlayer", "IjkPlayer")
+                showChoiceDialog(
+                    title = "播放器内核",
+                    items = options,
+                    current = SettingsText.playerEngineText(prefs.playerEngineKind),
+                ) { selected ->
+                    val value =
+                        when (selected) {
+                            "IjkPlayer" -> blbl.cat3399.core.prefs.AppPrefs.PLAYER_ENGINE_IJK
+                            else -> blbl.cat3399.core.prefs.AppPrefs.PLAYER_ENGINE_EXO
+                        }
+                    if (value == blbl.cat3399.core.prefs.AppPrefs.PLAYER_ENGINE_IJK) {
+                        IjkPlayerPluginUi.ensureInstalled(activity) {
+                            prefs.playerEngineKind = value
+                            AppToast.show(activity, "播放器内核：$selected（下次播放生效）")
+                            renderer.refreshSection(entry.id)
+                        }
+                        return@showChoiceDialog
+                    }
+
+                    if (prefs.playerEngineKind == value) {
+                        AppToast.show(activity, "播放器内核：$selected")
+                        return@showChoiceDialog
+                    }
+
+                    prefs.playerEngineKind = value
+                    AppToast.show(activity, "播放器内核：$selected（下次播放生效）")
                     renderer.refreshSection(entry.id)
                 }
             }

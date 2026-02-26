@@ -1,5 +1,6 @@
 package blbl.cat3399.feature.player
 
+import android.content.Intent
 import android.util.TypedValue
 import android.view.View
 import androidx.lifecycle.lifecycleScope
@@ -7,16 +8,20 @@ import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.SubtitleView
 import androidx.recyclerview.widget.RecyclerView
 import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.prefs.AppPrefs
 import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.popup.AppPopup
+import blbl.cat3399.feature.player.engine.BlblPlayerEngine
+import blbl.cat3399.feature.player.engine.ExoPlayerEngine
+import blbl.cat3399.feature.player.engine.IjkPlayerPluginUi
+import blbl.cat3399.feature.player.engine.PlayerEngineKind
 import kotlin.math.abs
 import kotlinx.coroutines.launch
 import java.util.Locale
 
 internal object PlayerSettingKeys {
+    const val PLAYER_ENGINE = "player_engine"
     const val RESOLUTION = "resolution"
     const val AUDIO_TRACK = "audio_track"
     const val CODEC = "codec"
@@ -34,6 +39,7 @@ internal object PlayerSettingKeys {
 
 internal fun PlayerActivity.handleSettingsItemClick(item: PlayerSettingsAdapter.SettingItem) {
     when (item.key) {
+        PlayerSettingKeys.PLAYER_ENGINE -> showPlayerEngineDialog()
         PlayerSettingKeys.RESOLUTION -> showResolutionDialog()
         PlayerSettingKeys.AUDIO_TRACK -> showAudioDialog()
         PlayerSettingKeys.CODEC -> showCodecDialog()
@@ -65,79 +71,174 @@ internal fun PlayerActivity.handleSettingsItemClick(item: PlayerSettingsAdapter.
 internal fun PlayerActivity.refreshSettings(adapter: PlayerSettingsAdapter) {
     val prefs = BiliClient.prefs
     val restoreFocusKey = currentSettingsFocusKey()
+    val subtitleSupported = player?.capabilities?.subtitlesSupported == true
+    val items =
+        buildList {
+            add(
+                PlayerSettingsAdapter.SettingItem(
+                    key = PlayerSettingKeys.PLAYER_ENGINE,
+                    title = "播放器内核",
+                    subtitle = playerEngineSubtitle(),
+                ),
+            )
+            add(
+                PlayerSettingsAdapter.SettingItem(
+                    key = PlayerSettingKeys.RESOLUTION,
+                    title = "分辨率",
+                    subtitle = resolutionSubtitle(),
+                ),
+            )
+            add(
+                PlayerSettingsAdapter.SettingItem(
+                    key = PlayerSettingKeys.AUDIO_TRACK,
+                    title = "音轨",
+                    subtitle = audioSubtitle(),
+                ),
+            )
+            add(
+                PlayerSettingsAdapter.SettingItem(
+                    key = PlayerSettingKeys.CODEC,
+                    title = "视频编码",
+                    subtitle = session.preferCodec,
+                ),
+            )
+            add(
+                PlayerSettingsAdapter.SettingItem(
+                    key = PlayerSettingKeys.PLAYBACK_SPEED,
+                    title = "播放速度",
+                    subtitle = String.format(Locale.US, "%.2fx", session.playbackSpeed),
+                ),
+            )
+            add(
+                PlayerSettingsAdapter.SettingItem(
+                    key = PlayerSettingKeys.PLAYBACK_MODE,
+                    title = "播放模式",
+                    subtitle = playbackModeSubtitle(),
+                ),
+            )
+            if (subtitleSupported) {
+                add(
+                    PlayerSettingsAdapter.SettingItem(
+                        key = PlayerSettingKeys.SUBTITLE_LANG,
+                        title = "字幕语言",
+                        subtitle = subtitleLangSubtitle(),
+                    ),
+                )
+                add(
+                    PlayerSettingsAdapter.SettingItem(
+                        key = PlayerSettingKeys.SUBTITLE_TEXT_SIZE,
+                        title = "字幕字体大小",
+                        subtitle = session.subtitleTextSizeSp.toInt().toString(),
+                    ),
+                )
+            }
+            add(
+                PlayerSettingsAdapter.SettingItem(
+                    key = PlayerSettingKeys.DANMAKU_OPACITY,
+                    title = "弹幕透明度",
+                    subtitle = String.format(Locale.US, "%.2f", session.danmaku.opacity),
+                ),
+            )
+            add(
+                PlayerSettingsAdapter.SettingItem(
+                    key = PlayerSettingKeys.DANMAKU_TEXT_SIZE,
+                    title = "弹幕字体大小",
+                    subtitle = session.danmaku.textSizeSp.toInt().toString(),
+                ),
+            )
+            add(
+                PlayerSettingsAdapter.SettingItem(
+                    key = PlayerSettingKeys.DANMAKU_SPEED,
+                    title = "弹幕速度",
+                    subtitle = session.danmaku.speedLevel.toString(),
+                ),
+            )
+            add(
+                PlayerSettingsAdapter.SettingItem(
+                    key = PlayerSettingKeys.DANMAKU_AREA,
+                    title = "弹幕区域",
+                    subtitle = areaText(session.danmaku.area),
+                ),
+            )
+            add(
+                PlayerSettingsAdapter.SettingItem(
+                    key = PlayerSettingKeys.DEBUG_INFO,
+                    title = "调试信息",
+                    subtitle = if (session.debugEnabled) "开" else "关",
+                ),
+            )
+            add(
+                PlayerSettingsAdapter.SettingItem(
+                    key = PlayerSettingKeys.PERSISTENT_BOTTOM_PROGRESS,
+                    title = "底部常驻进度条",
+                    subtitle = if (prefs.playerPersistentBottomProgressEnabled) "开" else "关",
+                ),
+            )
+        }
     adapter.submit(
-        listOf(
-            PlayerSettingsAdapter.SettingItem(
-                key = PlayerSettingKeys.RESOLUTION,
-                title = "分辨率",
-                subtitle = resolutionSubtitle(),
-            ),
-            PlayerSettingsAdapter.SettingItem(
-                key = PlayerSettingKeys.AUDIO_TRACK,
-                title = "音轨",
-                subtitle = audioSubtitle(),
-            ),
-            PlayerSettingsAdapter.SettingItem(
-                key = PlayerSettingKeys.CODEC,
-                title = "视频编码",
-                subtitle = session.preferCodec,
-            ),
-            PlayerSettingsAdapter.SettingItem(
-                key = PlayerSettingKeys.PLAYBACK_SPEED,
-                title = "播放速度",
-                subtitle = String.format(Locale.US, "%.2fx", session.playbackSpeed),
-            ),
-            PlayerSettingsAdapter.SettingItem(
-                key = PlayerSettingKeys.PLAYBACK_MODE,
-                title = "播放模式",
-                subtitle = playbackModeSubtitle(),
-            ),
-            PlayerSettingsAdapter.SettingItem(
-                key = PlayerSettingKeys.SUBTITLE_LANG,
-                title = "字幕语言",
-                subtitle = subtitleLangSubtitle(),
-            ),
-            PlayerSettingsAdapter.SettingItem(
-                key = PlayerSettingKeys.SUBTITLE_TEXT_SIZE,
-                title = "字幕字体大小",
-                subtitle = session.subtitleTextSizeSp.toInt().toString(),
-            ),
-            PlayerSettingsAdapter.SettingItem(
-                key = PlayerSettingKeys.DANMAKU_OPACITY,
-                title = "弹幕透明度",
-                subtitle = String.format(Locale.US, "%.2f", session.danmaku.opacity),
-            ),
-            PlayerSettingsAdapter.SettingItem(
-                key = PlayerSettingKeys.DANMAKU_TEXT_SIZE,
-                title = "弹幕字体大小",
-                subtitle = session.danmaku.textSizeSp.toInt().toString(),
-            ),
-            PlayerSettingsAdapter.SettingItem(
-                key = PlayerSettingKeys.DANMAKU_SPEED,
-                title = "弹幕速度",
-                subtitle = session.danmaku.speedLevel.toString(),
-            ),
-            PlayerSettingsAdapter.SettingItem(
-                key = PlayerSettingKeys.DANMAKU_AREA,
-                title = "弹幕区域",
-                subtitle = areaText(session.danmaku.area),
-            ),
-            PlayerSettingsAdapter.SettingItem(
-                key = PlayerSettingKeys.DEBUG_INFO,
-                title = "调试信息",
-                subtitle = if (session.debugEnabled) "开" else "关",
-            ),
-            PlayerSettingsAdapter.SettingItem(
-                key = PlayerSettingKeys.PERSISTENT_BOTTOM_PROGRESS,
-                title = "底部常驻进度条",
-                subtitle = if (prefs.playerPersistentBottomProgressEnabled) "开" else "关",
-            ),
-        ),
+        items,
         onCommitted = {
             val key = restoreFocusKey ?: return@submit
             restoreSettingsPanelFocusByKey(key)
         },
     )
+}
+
+private fun PlayerActivity.playerEngineSubtitle(): String {
+    val kind = player?.kind ?: PlayerEngineKind.fromPrefValue(BiliClient.prefs.playerEngineKind)
+    return when (kind) {
+        PlayerEngineKind.IjkPlayer -> "IjkPlayer"
+        PlayerEngineKind.ExoPlayer -> "ExoPlayer"
+    }
+}
+
+private fun PlayerActivity.restartForEngineSwitch(picked: PlayerEngineKind) {
+    val engine = player ?: return
+    val prefs = BiliClient.prefs
+    prefs.playerEngineKind = picked.prefValue
+
+    val resumePosMs = engine.currentPosition.coerceAtLeast(0L)
+    val resumePlayWhenReady = engine.playWhenReady
+    val sessionJson = session.toEngineSwitchJsonString()
+
+    val restart =
+        Intent(this, PlayerActivity::class.java).apply {
+            val bvid = currentBvid.takeIf { it.isNotBlank() } ?: intent.getStringExtra(PlayerActivity.EXTRA_BVID).orEmpty()
+            if (bvid.isNotBlank()) putExtra(PlayerActivity.EXTRA_BVID, bvid)
+            val cid = currentCid.takeIf { it > 0L } ?: intent.getLongExtra(PlayerActivity.EXTRA_CID, -1L).takeIf { it > 0L }
+            if (cid != null) putExtra(PlayerActivity.EXTRA_CID, cid)
+            currentEpId?.takeIf { it > 0L }?.let { putExtra(PlayerActivity.EXTRA_EP_ID, it) }
+            currentAid?.takeIf { it > 0L }?.let { putExtra(PlayerActivity.EXTRA_AID, it) }
+            pageListToken?.takeIf { it.isNotBlank() }?.let { putExtra(PlayerActivity.EXTRA_PLAYLIST_TOKEN, it) }
+            pageListIndex.takeIf { it >= 0 }?.let { putExtra(PlayerActivity.EXTRA_PLAYLIST_INDEX, it) }
+            putExtra(PlayerActivity.EXTRA_ENGINE_SWITCH_RESUME_POSITION_MS, resumePosMs)
+            putExtra(PlayerActivity.EXTRA_ENGINE_SWITCH_RESUME_PLAY_WHEN_READY, resumePlayWhenReady)
+            putExtra(PlayerActivity.EXTRA_ENGINE_SWITCH_SESSION_JSON, sessionJson)
+        }
+
+    startActivity(restart)
+    finish()
+}
+
+internal fun PlayerActivity.showPlayerEngineDialog() {
+    val currentKind = player?.kind ?: PlayerEngineKind.fromPrefValue(BiliClient.prefs.playerEngineKind)
+    val items = listOf("ExoPlayer（默认）", "IjkPlayer")
+    val checked = if (currentKind == PlayerEngineKind.IjkPlayer) 1 else 0
+    showSettingsSingleChoiceDialog(
+        title = "播放器内核",
+        items = items,
+        checkedIndex = checked,
+    ) { which, _ ->
+        val picked = if (which == 1) PlayerEngineKind.IjkPlayer else PlayerEngineKind.ExoPlayer
+        if (picked == currentKind) return@showSettingsSingleChoiceDialog
+        if (picked == PlayerEngineKind.IjkPlayer) {
+            IjkPlayerPluginUi.ensureInstalled(this) {
+                restartForEngineSwitch(picked)
+            }
+        } else {
+            restartForEngineSwitch(picked)
+        }
+    }
 }
 
 private fun PlayerActivity.currentSettingsFocusKey(): String? {
@@ -334,8 +435,8 @@ internal fun PlayerActivity.playbackModeSubtitle(): String {
     return playbackModeLabel(resolvedPlaybackMode())
 }
 
-internal fun PlayerActivity.applyPlaybackMode(exo: ExoPlayer) {
-    exo.repeatMode =
+internal fun PlayerActivity.applyPlaybackMode(engine: BlblPlayerEngine) {
+    engine.repeatMode =
         when (resolvedPlaybackMode()) {
             AppPrefs.PLAYER_PLAYBACK_MODE_LOOP_ONE -> Player.REPEAT_MODE_ONE
             else -> Player.REPEAT_MODE_OFF
@@ -343,7 +444,7 @@ internal fun PlayerActivity.applyPlaybackMode(exo: ExoPlayer) {
 }
 
 internal fun PlayerActivity.showPlaybackModeDialog() {
-    val exo = player ?: return
+    val engine = player ?: return
     val items =
         listOf(
             "播放视频列表",
@@ -397,7 +498,7 @@ internal fun PlayerActivity.showPlaybackModeDialog() {
             } else {
                 session.copy(playbackModeOverride = pickedCode)
             }
-        applyPlaybackMode(exo)
+        applyPlaybackMode(engine)
         updatePlaylistControls()
         refreshSettings(binding.recyclerSettings.adapter as PlayerSettingsAdapter)
     }
@@ -429,7 +530,11 @@ internal fun PlayerActivity.resolveSubtitleLang(code: String): String {
 }
 
 internal fun PlayerActivity.showSubtitleLangDialog() {
-    val exo = player ?: return
+    val exo = (player as? ExoPlayerEngine)?.exoPlayer
+    if (exo == null) {
+        AppToast.show(this, "当前播放器内核不支持字幕")
+        return
+    }
     if (subtitleItems.isEmpty()) {
         AppToast.show(this, "该视频暂无字幕")
         return

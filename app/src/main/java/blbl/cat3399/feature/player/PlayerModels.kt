@@ -1,6 +1,7 @@
 package blbl.cat3399.feature.player
 
 import blbl.cat3399.feature.player.danmaku.DanmakuSessionSettings
+import org.json.JSONObject
 
 data class SegmentMark(
     val startFraction: Float,
@@ -27,6 +28,8 @@ internal sealed interface Playable {
         val audioUrl: String,
         val videoUrlCandidates: List<String>,
         val audioUrlCandidates: List<String>,
+        val videoTrackInfo: DashTrackInfo,
+        val audioTrackInfo: DashTrackInfo,
         val qn: Int,
         val codecid: Int,
         val audioId: Int,
@@ -49,6 +52,21 @@ internal sealed interface Playable {
 }
 
 internal enum class DashAudioKind { NORMAL, DOLBY, FLAC }
+
+internal data class DashSegmentBase(
+    val initialization: String,
+    val indexRange: String,
+)
+
+internal data class DashTrackInfo(
+    val mimeType: String?,
+    val codecs: String?,
+    val bandwidth: Long?,
+    val width: Int?,
+    val height: Int?,
+    val frameRate: String?,
+    val segmentBase: DashSegmentBase?,
+)
 
 internal data class PlaybackConstraints(
     val allowDolbyVision: Boolean = true,
@@ -98,3 +116,86 @@ internal data class PlayerSessionSettings(
     val danmaku: DanmakuSessionSettings,
     val debugEnabled: Boolean,
 )
+
+internal fun PlayerSessionSettings.toEngineSwitchJsonString(): String {
+    val obj =
+        JSONObject().apply {
+            put("v", 1)
+            put("playbackSpeed", playbackSpeed.toDouble())
+            put("preferCodec", preferCodec)
+            put("preferAudioId", preferAudioId)
+            put("targetAudioId", targetAudioId)
+            put("preferredQn", preferredQn)
+            put("targetQn", targetQn)
+            put("playbackModeOverride", playbackModeOverride ?: JSONObject.NULL)
+            put("subtitleEnabled", subtitleEnabled)
+            put("subtitleLangOverride", subtitleLangOverride ?: JSONObject.NULL)
+            put("subtitleTextSizeSp", subtitleTextSizeSp.toDouble())
+            put("danmakuEnabled", danmaku.enabled)
+            put("danmakuOpacity", danmaku.opacity.toDouble())
+            put("danmakuTextSizeSp", danmaku.textSizeSp.toDouble())
+            put("danmakuSpeedLevel", danmaku.speedLevel)
+            put("danmakuArea", danmaku.area.toDouble())
+            put("debugEnabled", debugEnabled)
+        }
+    return obj.toString()
+}
+
+internal fun PlayerSessionSettings.restoreFromEngineSwitchJsonString(raw: String): PlayerSessionSettings {
+    val obj = runCatching { JSONObject(raw) }.getOrNull() ?: return this
+
+    fun optFloat(key: String, fallback: Float): Float {
+        val v = obj.optDouble(key, fallback.toDouble()).toFloat()
+        if (!v.isFinite()) return fallback
+        return v
+    }
+
+    fun optInt(key: String, fallback: Int): Int {
+        return obj.optInt(key, fallback)
+    }
+
+    fun optStringOrNull(key: String): String? {
+        if (obj.isNull(key)) return null
+        val v = obj.optString(key, "").trim()
+        return v.takeIf { it.isNotBlank() }
+    }
+
+    val speed = optFloat("playbackSpeed", playbackSpeed).coerceIn(0.25f, 4.0f)
+    val codec = obj.optString("preferCodec", preferCodec).trim().ifBlank { preferCodec }
+    val preferAudio = optInt("preferAudioId", preferAudioId).takeIf { it > 0 } ?: preferAudioId
+    val tAudio = optInt("targetAudioId", targetAudioId).takeIf { it >= 0 } ?: targetAudioId
+    val pQn = optInt("preferredQn", preferredQn).takeIf { it > 0 } ?: preferredQn
+    val tQn = optInt("targetQn", targetQn).takeIf { it >= 0 } ?: targetQn
+    val modeOverride = optStringOrNull("playbackModeOverride")
+    val subEnabled = obj.optBoolean("subtitleEnabled", subtitleEnabled)
+    val subLangOverride = optStringOrNull("subtitleLangOverride")
+    val subTextSize = optFloat("subtitleTextSizeSp", subtitleTextSizeSp).coerceIn(10f, 60f)
+    val danEnabled = obj.optBoolean("danmakuEnabled", danmaku.enabled)
+    val danOpacity = optFloat("danmakuOpacity", danmaku.opacity).coerceIn(0.05f, 1.0f)
+    val danText = optFloat("danmakuTextSizeSp", danmaku.textSizeSp).coerceIn(10f, 60f)
+    val danSpeed = optInt("danmakuSpeedLevel", danmaku.speedLevel).coerceIn(1, 10)
+    val danArea = optFloat("danmakuArea", danmaku.area).coerceIn(0.05f, 1.0f)
+    val dbg = obj.optBoolean("debugEnabled", debugEnabled)
+
+    return copy(
+        playbackSpeed = speed,
+        preferCodec = codec,
+        preferAudioId = preferAudio,
+        targetAudioId = tAudio,
+        preferredQn = pQn,
+        targetQn = tQn,
+        playbackModeOverride = modeOverride,
+        subtitleEnabled = subEnabled,
+        subtitleLangOverride = subLangOverride,
+        subtitleTextSizeSp = subTextSize,
+        danmaku =
+            danmaku.copy(
+                enabled = danEnabled,
+                opacity = danOpacity,
+                textSizeSp = danText,
+                speedLevel = danSpeed,
+                area = danArea,
+            ),
+        debugEnabled = dbg,
+    )
+}

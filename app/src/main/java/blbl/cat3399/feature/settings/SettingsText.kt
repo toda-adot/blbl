@@ -89,6 +89,12 @@ object SettingsText {
             else -> "SurfaceView"
         }
 
+    fun playerEngineText(code: String): String =
+        when (code) {
+            blbl.cat3399.core.prefs.AppPrefs.PLAYER_ENGINE_IJK -> "IjkPlayer"
+            else -> "ExoPlayer"
+        }
+
     fun downKeyOsdFocusTargetText(code: String): String =
         when (code) {
             blbl.cat3399.core.prefs.AppPrefs.PLAYER_DOWN_KEY_OSD_FOCUS_PREV -> "上一个"

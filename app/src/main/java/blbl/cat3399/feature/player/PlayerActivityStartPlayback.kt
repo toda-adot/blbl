@@ -4,13 +4,16 @@ import android.content.Intent
 import android.net.Uri
 import android.view.View
 import androidx.lifecycle.lifecycleScope
-import androidx.media3.exoplayer.ExoPlayer
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.util.parseBangumiRedirectUrl
 import blbl.cat3399.feature.my.BangumiDetailActivity
+import blbl.cat3399.feature.player.engine.BlblPlayerEngine
+import blbl.cat3399.feature.player.engine.ExoPlayerEngine
+import blbl.cat3399.feature.player.engine.PlayerEngineKind
+import blbl.cat3399.feature.player.engine.PlaybackSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
@@ -21,7 +24,7 @@ import blbl.cat3399.core.api.BiliApiException
 import blbl.cat3399.core.prefs.AppPrefs
 import kotlinx.coroutines.withContext
 
-internal fun PlayerActivity.resetPlaybackStateForNewMedia(exo: ExoPlayer) {
+internal fun PlayerActivity.resetPlaybackStateForNewMedia(engine: BlblPlayerEngine) {
     cancelPlayUrlAutoRefresh(reason = "new_media")
     traceFirstFrameLogged = false
     lastAvailableQns = emptyList()
@@ -101,9 +104,9 @@ internal fun PlayerActivity.resetPlaybackStateForNewMedia(exo: ExoPlayer) {
     playbackConstraints = PlaybackConstraints()
     decodeFallbackAttempted = false
     lastPickedDash = null
-    exo.stop()
-    applySubtitleEnabled(exo)
-    applyPlaybackMode(exo)
+    engine.stop()
+    (engine as? ExoPlayerEngine)?.exoPlayer?.let { applySubtitleEnabled(it) }
+    applyPlaybackMode(engine)
     updateSubtitleButton()
     updateDanmakuButton()
     updateUpButton()
@@ -118,7 +121,11 @@ internal fun PlayerActivity.startPlayback(
     initialTitle: String?,
     startedFromList: PlayerVideoListKind? = null,
 ) {
-    val exo = player ?: return
+    val engine = player ?: return
+    val pendingSeekMs = pendingStartPositionMs
+    val pendingPlayWhenReady = pendingStartPlayWhenReady
+    pendingStartPositionMs = null
+    pendingStartPlayWhenReady = null
     val safeBvid = bvid?.trim().orEmpty()
     val safeAid = aidExtra?.takeIf { it > 0 }
     val startFromList = startedFromList
@@ -168,7 +175,7 @@ internal fun PlayerActivity.startPlayback(
     binding.llViewMeta.visibility = View.VISIBLE
     binding.tvPubdate.text = ""
     binding.tvPubdate.visibility = View.GONE
-    resetPlaybackStateForNewMedia(exo)
+    resetPlaybackStateForNewMedia(engine)
 
     updatePlaylistControls()
 
@@ -271,11 +278,16 @@ internal fun PlayerActivity.startPlayback(
                         prepareDanmakuMeta(cid, currentAid ?: aid, trace)
                             .also { trace?.log("danmakuMeta:done", "segTotal=${it.segmentTotal} segMs=${it.segmentSizeMs}") }
                     }
+                val subtitleSupported = engine.capabilities.subtitlesSupported
                 val subJob =
-                    async(Dispatchers.IO) {
-                        trace?.log("subtitle:start")
-                        prepareSubtitleConfig(viewData, resolvedBvid, cid, trace)
-                            .also { trace?.log("subtitle:done", "ok=${it != null}") }
+                    if (subtitleSupported) {
+                        async(Dispatchers.IO) {
+                            trace?.log("subtitle:start")
+                            prepareSubtitleConfig(viewData, resolvedBvid, cid, trace)
+                                .also { trace?.log("subtitle:done", "ok=${it != null}") }
+                        }
+                    } else {
+                        null
                     }
 
                 trace?.log("playurl:await")
@@ -284,26 +296,40 @@ internal fun PlayerActivity.startPlayback(
                 showRiskControlBypassHintIfNeeded(playJson)
                 lastAvailableQns = parseDashVideoQnList(playJson)
                 lastAvailableAudioIds = parseDashAudioIdList(playJson, constraints = playbackConstraints)
-                trace?.log("subtitle:await")
-                subtitleConfig = subJob.await()
-                trace?.log("subtitle:awaitDone", "ok=${subtitleConfig != null}")
-                subtitleAvailabilityKnown = true
-                subtitleAvailable = subtitleConfig != null
+                if (subtitleSupported) {
+                    trace?.log("subtitle:await")
+                    subtitleConfig = subJob?.await()
+                    trace?.log("subtitle:awaitDone", "ok=${subtitleConfig != null}")
+                    subtitleAvailabilityKnown = true
+                    subtitleAvailable = subtitleConfig != null
+                } else {
+                    subtitleConfig = null
+                    subtitleAvailabilityKnown = true
+                    subtitleAvailable = false
+                }
                 (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
-                applySubtitleEnabled(exo)
+                (engine as? ExoPlayerEngine)?.exoPlayer?.let { applySubtitleEnabled(it) }
 
-                trace?.log("exo:setMediaSource:start")
+                trace?.log("player:setSource:start", "kind=${engine.kind.prefValue}")
+                if (engine.kind == PlayerEngineKind.IjkPlayer && playable !is Playable.Dash) {
+                    AppToast.showLong(this@startPlayback, "IjkPlayer 内核仅支持 DASH（音视频分离）流，请切回 ExoPlayer")
+                    return@launch
+                }
                 when (playable) {
                     is Playable.Dash -> {
+                        if (engine.kind == PlayerEngineKind.IjkPlayer) {
+                            if (playable.videoTrackInfo.segmentBase == null || playable.audioTrackInfo.segmentBase == null) {
+                                AppToast.showLong(this@startPlayback, "IjkPlayer 播放 DASH 需要 segment_base（initialization/index_range），当前流缺失，请切回 ExoPlayer")
+                                return@launch
+                            }
+                        }
                         lastPickedDash = playable
                         debug.cdnHost = runCatching { Uri.parse(playable.videoUrl).host }.getOrNull()
                         AppLog.i(
                             "Player",
                             "picked DASH qn=${playable.qn} codecid=${playable.codecid} dv=${playable.isDolbyVision} a=${playable.audioKind}(${playable.audioId}) video=${playable.videoUrl}",
                         )
-                        val videoFactory = createCdnFactory(DebugStreamKind.VIDEO, urlCandidates = playable.videoUrlCandidates)
-                        val audioFactory = createCdnFactory(DebugStreamKind.AUDIO, urlCandidates = playable.audioUrlCandidates)
-                        exo.setMediaSource(buildMerged(videoFactory, audioFactory, playable.videoUrl, playable.audioUrl, subtitleConfig))
+                        engine.setSource(PlaybackSource.Vod(playable = playable, subtitle = subtitleConfig, durationMs = currentViewDurationMs))
                         applyResolutionFallbackIfNeeded(requestedQn = session.targetQn, actualQn = playable.qn)
                         applyAudioFallbackIfNeeded(requestedAudioId = session.targetAudioId, actualAudioId = playable.audioId)
                     }
@@ -317,8 +343,7 @@ internal fun PlayerActivity.startPlayback(
                             "Player",
                             "picked VideoOnly qn=${playable.qn} codecid=${playable.codecid} dv=${playable.isDolbyVision} video=${playable.videoUrl}",
                         )
-                        val mainFactory = createCdnFactory(DebugStreamKind.MAIN, urlCandidates = playable.videoUrlCandidates)
-                        exo.setMediaSource(buildProgressive(mainFactory, playable.videoUrl, subtitleConfig))
+                        engine.setSource(PlaybackSource.Vod(playable = playable, subtitle = subtitleConfig, durationMs = currentViewDurationMs))
                         applyResolutionFallbackIfNeeded(requestedQn = session.targetQn, actualQn = playable.qn)
                     }
 
@@ -328,16 +353,18 @@ internal fun PlayerActivity.startPlayback(
                         (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
                         debug.cdnHost = runCatching { Uri.parse(playable.url).host }.getOrNull()
                         AppLog.i("Player", "picked Progressive url=${playable.url}")
-                        val mainFactory = createCdnFactory(DebugStreamKind.MAIN, urlCandidates = playable.urlCandidates)
-                        exo.setMediaSource(buildProgressive(mainFactory, playable.url, subtitleConfig))
+                        engine.setSource(PlaybackSource.Vod(playable = playable, subtitle = subtitleConfig, durationMs = currentViewDurationMs))
                     }
                 }
-                trace?.log("exo:setMediaSource:done")
+                trace?.log("player:setSource:done")
                 schedulePlayUrlAutoRefresh(playable, reason = "start_playback")
-                trace?.log("exo:prepare")
-                exo.prepare()
-                trace?.log("exo:playWhenReady")
-                exo.playWhenReady = true
+                trace?.log("player:prepare")
+                engine.prepare()
+                trace?.log("player:playWhenReady")
+                engine.playWhenReady = pendingPlayWhenReady ?: true
+                if (pendingSeekMs != null && pendingSeekMs > 0L) {
+                    engine.seekTo(pendingSeekMs)
+                }
                 updateSubtitleButton()
                 maybeScheduleAutoResume(
                     playJson = playJson,
@@ -356,7 +383,7 @@ internal fun PlayerActivity.startPlayback(
                 val dmMeta = dmJob.await()
                 trace?.log("danmakuMeta:awaitDone")
                 applyDanmakuMeta(dmMeta)
-                requestDanmakuSegmentsForPosition(exo.currentPosition.coerceAtLeast(0L), immediate = true)
+                requestDanmakuSegmentsForPosition(engine.currentPosition.coerceAtLeast(0L), immediate = true)
             } catch (throwable: Throwable) {
                 if (throwable is CancellationException) return@launch
                 AppLog.e("Player", "start failed", throwable)
@@ -441,7 +468,7 @@ private fun PlayerActivity.applyPartsList(parsed: PlaylistParsed, index: Int, so
     partsListIndex = index
 }
 
-internal fun PlayerActivity.handlePlaybackEnded(exo: ExoPlayer) {
+internal fun PlayerActivity.handlePlaybackEnded(engine: BlblPlayerEngine) {
     val now = android.os.SystemClock.uptimeMillis()
     if (now - lastEndedActionAtMs < 350) return
     lastEndedActionAtMs = now
@@ -450,9 +477,9 @@ internal fun PlayerActivity.handlePlaybackEnded(exo: ExoPlayer) {
         AppPrefs.PLAYER_PLAYBACK_MODE_NONE -> Unit
 
         AppPrefs.PLAYER_PLAYBACK_MODE_LOOP_ONE -> {
-            exo.seekTo(0)
-            exo.playWhenReady = true
-            exo.play()
+            engine.seekTo(0)
+            engine.playWhenReady = true
+            engine.play()
         }
 
         AppPrefs.PLAYER_PLAYBACK_MODE_EXIT -> finish()

@@ -20,11 +20,12 @@ import blbl.cat3399.core.model.VideoCard
 
 internal fun PlayerActivity.applyOsdButtonsVisibility() {
     val enabled = BiliClient.prefs.playerOsdButtons.toSet()
+    val subtitleSupported = player?.capabilities?.subtitlesSupported ?: true
 
     binding.btnPrev.visibility = if (enabled.contains(AppPrefs.PLAYER_OSD_BTN_PREV)) View.VISIBLE else View.GONE
     binding.btnPlayPause.visibility = View.VISIBLE
     binding.btnNext.visibility = if (enabled.contains(AppPrefs.PLAYER_OSD_BTN_NEXT)) View.VISIBLE else View.GONE
-    binding.btnSubtitle.visibility = if (enabled.contains(AppPrefs.PLAYER_OSD_BTN_SUBTITLE)) View.VISIBLE else View.GONE
+    binding.btnSubtitle.visibility = if (subtitleSupported && enabled.contains(AppPrefs.PLAYER_OSD_BTN_SUBTITLE)) View.VISIBLE else View.GONE
     binding.btnDanmaku.visibility = if (enabled.contains(AppPrefs.PLAYER_OSD_BTN_DANMAKU)) View.VISIBLE else View.GONE
     binding.btnComments.visibility = if (enabled.contains(AppPrefs.PLAYER_OSD_BTN_COMMENTS)) View.VISIBLE else View.GONE
     binding.btnUp.visibility = if (enabled.contains(AppPrefs.PLAYER_OSD_BTN_UP)) View.VISIBLE else View.GONE
