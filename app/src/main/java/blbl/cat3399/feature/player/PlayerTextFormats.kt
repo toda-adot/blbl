@@ -37,6 +37,20 @@ internal fun qnRank(qn: Int): Int {
     return if (idx >= 0) idx else (order.size + qn)
 }
 
+internal fun pickQnByQualityOrder(availableQns: List<Int>, desiredQn: Int): Int {
+    val available = availableQns.filter { it > 0 }.distinct()
+    if (available.isEmpty()) return 0
+    if (desiredQn <= 0) return available.maxBy { qnRank(it) }
+    if (available.contains(desiredQn)) return desiredQn
+
+    val desiredRank = qnRank(desiredQn)
+    val notAboveDesired = available.filter { qnRank(it) <= desiredRank }
+    if (notAboveDesired.isNotEmpty()) return notAboveDesired.maxBy { qnRank(it) }
+
+    // All available qualities are above desiredQn: choose the lowest one to reduce decode risk.
+    return available.minBy { qnRank(it) }
+}
+
 internal fun areaText(area: Float): String =
     when {
         area >= 0.99f -> "不限"

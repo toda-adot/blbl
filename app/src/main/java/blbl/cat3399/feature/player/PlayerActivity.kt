@@ -2299,12 +2299,7 @@ class PlayerActivity : BaseActivity() {
             val availableQns = videoItems.map { qnOf(it) }.filter { it > 0 }.distinct()
 
             val desiredQn = session.targetQn.takeIf { it > 0 } ?: session.preferredQn
-            val pickedQn =
-                when {
-                    availableQns.contains(desiredQn) -> desiredQn
-                    availableQns.isNotEmpty() -> availableQns.maxBy { qnRank(it) }
-                    else -> 0
-                }
+            val pickedQn = pickQnByQualityOrder(availableQns, desiredQn)
 
             val candidatesByQn = if (pickedQn > 0) videoItems.filter { qnOf(it) == pickedQn } else videoItems
             val candidates =
@@ -2941,7 +2936,7 @@ class PlayerActivity : BaseActivity() {
         }
 
         if (requestedQn > 0 && actualQn > 0 && requestedQn != actualQn) {
-            val fallbackQn = lastAvailableQns.maxByOrNull { qnRank(it) } ?: actualQn
+            val fallbackQn = pickQnByQualityOrder(lastAvailableQns, requestedQn).takeIf { it > 0 } ?: actualQn
             if (session.targetQn != fallbackQn) {
                 session = session.copy(targetQn = fallbackQn)
                 changed = true
