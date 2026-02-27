@@ -6,6 +6,7 @@ import android.content.res.Configuration
 import android.view.LayoutInflater
 import androidx.appcompat.view.ContextThemeWrapper
 import blbl.cat3399.R
+import blbl.cat3399.core.theme.ThemePresets
 import blbl.cat3399.core.prefs.AppPrefs
 import kotlin.math.roundToInt
 
@@ -60,14 +61,17 @@ object UiUserScale {
         //
         // Implementation:
         // - Create a configuration context (density override only).
-        // - Clone the base theme into the new Resources instance.
+        // - Apply the same theme preset as Activities, but do NOT rely on Theme.setTo(originalTheme):
+        //   Theme copying is unreliable on Android 5.x when Resources instances differ.
         // - Apply Theme.Blbl as a fallback with force=false (do not override preset/overlays).
         val configContext = originalBase.createConfigurationContext(config)
-        val theme = configContext.resources.newTheme().apply {
-            setTo(originalBase.theme)
-            applyStyle(R.style.Theme_Blbl, false)
-        }
-        val themed = ContextThemeWrapper(configContext, theme)
+        val spec = ThemePresets.resolve(originalBase)
+        val themed =
+            ContextThemeWrapper(configContext, spec.baseThemeRes).apply {
+                spec.overlayRes?.let { theme.applyStyle(it, true) }
+                // Fallback for missing AppCompat/Material attributes.
+                theme.applyStyle(R.style.Theme_Blbl, false)
+            }
         return UserScaledContext(
             base = themed,
             originalBase = originalBase,

@@ -2,6 +2,8 @@ package blbl.cat3399.feature.settings
 
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import blbl.cat3399.R
+import blbl.cat3399.core.ui.ThemeColor
 import androidx.recyclerview.widget.RecyclerView
 import blbl.cat3399.databinding.ItemSettingsLeftBinding
 
@@ -47,6 +49,18 @@ class SettingsLeftAdapter(
         fun bind(text: String, selected: Boolean, onClick: () -> Unit) {
             binding.tvTitle.text = text
             binding.root.isSelected = selected
+            val ctx = binding.root.context
+            binding.root.setCardBackgroundColor(
+                if (selected) {
+                    ThemeColor.resolve(
+                        context = ctx,
+                        attr = R.attr.blblAccentContainer,
+                        fallbackRes = R.color.blbl_accent_violet_container,
+                    )
+                } else {
+                    0x00000000
+                },
+            )
             binding.root.setOnClickListener { onClick() }
         }
     }
