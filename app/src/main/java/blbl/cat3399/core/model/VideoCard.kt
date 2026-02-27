@@ -18,6 +18,8 @@ data class VideoCard(
     val pubDate: Long?,
     val pubDateText: String?,
     val isChargingArc: Boolean = false,
+    // Optional overlay text rendered on the cover (bottom-left). Used by PGC episode cards.
+    val coverLeftBottomText: String? = null,
 ) {
     fun stableKey(): String =
         when {

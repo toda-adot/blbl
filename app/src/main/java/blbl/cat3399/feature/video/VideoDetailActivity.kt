@@ -23,6 +23,7 @@ import blbl.cat3399.core.ui.GridSpanPolicy
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.core.ui.ThemeColor
 import blbl.cat3399.core.ui.cloneInUserScale
+import blbl.cat3399.core.ui.smoothScrollToPositionStart
 import blbl.cat3399.core.util.parseBangumiRedirectUrl
 import blbl.cat3399.core.util.Format
 import blbl.cat3399.databinding.ActivityVideoDetailBinding
@@ -193,6 +194,7 @@ class VideoDetailActivity : BaseActivity() {
                 onCoinClick = { AppToast.show(this, "暂不支持投币") },
                 onFavClick = { AppToast.show(this, "暂不支持收藏") },
                 onSecondaryClick = { /* video detail has no secondary action yet */ },
+                onUpCardFocused = { smoothScrollHeaderToTop() },
                 onPartsOrderClick = {
                     partsOrderReversed = !partsOrderReversed
                     applyHeader()
@@ -293,6 +295,12 @@ class VideoDetailActivity : BaseActivity() {
         )
 
         binding.recycler.post { headerAdapter.requestFocusPlay() }
+    }
+
+    private fun smoothScrollHeaderToTop() {
+        if (!this::binding.isInitialized) return
+        if (!binding.recycler.canScrollVertically(-1)) return
+        binding.recycler.smoothScrollToPositionStart(0)
     }
 
     private suspend fun fetchViewData(): JSONObject =

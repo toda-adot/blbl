@@ -50,6 +50,7 @@
     <dimen name="video_detail_header_padding_bottom">12dp</dimen>
 
     <dimen name="video_detail_header_cover_width">480dp</dimen>
+    <dimen name="video_detail_header_cover_width_poster">220dp</dimen>
 
     <dimen name="video_detail_header_title_margin_start">16dp</dimen>
     <dimen name="video_detail_header_title_margin_end">12dp</dimen>
