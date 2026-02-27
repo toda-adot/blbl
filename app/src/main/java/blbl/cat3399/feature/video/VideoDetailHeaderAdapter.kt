@@ -3,6 +3,7 @@ package blbl.cat3399.feature.video
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.core.view.isVisible
+import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import blbl.cat3399.core.image.ImageLoader
@@ -20,6 +21,9 @@ class VideoDetailHeaderAdapter(
     private val onCoinClick: () -> Unit,
     private val onFavClick: () -> Unit,
     private val onSecondaryClick: () -> Unit,
+    private val onUpCardFocused: (() -> Unit)? = null,
+    private val onPrimaryActionFocused: (() -> Unit)? = null,
+    private val onSecondaryActionFocused: (() -> Unit)? = null,
     private val onPartsOrderClick: () -> Unit,
     private val onSeasonOrderClick: () -> Unit,
     private val onPartCardClick: (card: VideoCard, index: Int) -> Unit,
@@ -44,11 +48,15 @@ class VideoDetailHeaderAdapter(
     private var partsCards: List<VideoCard> = emptyList()
     private var partsSelectedKey: String? = null
     private var partsOrderReversed: Boolean = false
+    private var partsAutoScrollToSelected: Boolean = true
+    private var partsScrollToStart: Boolean = false
 
     private var seasonHeaderText: String? = null
     private var seasonCards: List<VideoCard> = emptyList()
     private var seasonSelectedKey: String? = null
     private var seasonOrderReversed: Boolean = false
+    private var seasonAutoScrollToSelected: Boolean = true
+    private var seasonScrollToStart: Boolean = false
 
     private var recommendHeaderText: String? = null
 
@@ -61,6 +69,10 @@ class VideoDetailHeaderAdapter(
     override fun getItemCount(): Int = 1
 
     fun requestFocusPlay(): Boolean = holderRef?.get()?.binding?.btnPlay?.requestFocus() == true
+
+    fun requestFocusPartsOrder(): Boolean = holderRef?.get()?.binding?.btnPartsOrder?.requestFocus() == true
+
+    fun requestFocusSeasonOrder(): Boolean = holderRef?.get()?.binding?.btnSeasonOrder?.requestFocus() == true
 
     fun invalidateSizing() {
         notifyItemChanged(0)
@@ -82,10 +94,14 @@ class VideoDetailHeaderAdapter(
         partsCards: List<VideoCard>,
         partsSelectedKey: String?,
         partsOrderReversed: Boolean,
+        partsAutoScrollToSelected: Boolean = true,
+        partsScrollToStart: Boolean = false,
         seasonHeaderText: String?,
         seasonCards: List<VideoCard>,
         seasonSelectedKey: String?,
         seasonOrderReversed: Boolean,
+        seasonAutoScrollToSelected: Boolean = true,
+        seasonScrollToStart: Boolean = false,
         recommendHeaderText: String?,
     ) {
         this.title = title
@@ -105,11 +121,15 @@ class VideoDetailHeaderAdapter(
         this.partsCards = partsCards
         this.partsSelectedKey = partsSelectedKey
         this.partsOrderReversed = partsOrderReversed
+        this.partsAutoScrollToSelected = partsAutoScrollToSelected
+        this.partsScrollToStart = partsScrollToStart
 
         this.seasonHeaderText = seasonHeaderText
         this.seasonCards = seasonCards
         this.seasonSelectedKey = seasonSelectedKey
         this.seasonOrderReversed = seasonOrderReversed
+        this.seasonAutoScrollToSelected = seasonAutoScrollToSelected
+        this.seasonScrollToStart = seasonScrollToStart
 
         this.recommendHeaderText = recommendHeaderText
         notifyItemChanged(0)
@@ -131,6 +151,9 @@ class VideoDetailHeaderAdapter(
             onCoinClick = onCoinClick,
             onFavClick = onFavClick,
             onSecondaryClick = onSecondaryClick,
+            onUpCardFocused = onUpCardFocused,
+            onPrimaryActionFocused = onPrimaryActionFocused,
+            onSecondaryActionFocused = onSecondaryActionFocused,
             onPartsOrderClick = onPartsOrderClick,
             onSeasonOrderClick = onSeasonOrderClick,
             onPartCardClick = onPartCardClick,
@@ -155,10 +178,14 @@ class VideoDetailHeaderAdapter(
             partsCards = partsCards,
             partsSelectedKey = partsSelectedKey,
             partsOrderReversed = partsOrderReversed,
+            partsAutoScrollToSelected = partsAutoScrollToSelected,
+            partsScrollToStart = partsScrollToStart,
             seasonHeaderText = seasonHeaderText,
             seasonCards = seasonCards,
             seasonSelectedKey = seasonSelectedKey,
             seasonOrderReversed = seasonOrderReversed,
+            seasonAutoScrollToSelected = seasonAutoScrollToSelected,
+            seasonScrollToStart = seasonScrollToStart,
             recommendHeaderText = recommendHeaderText,
         )
     }
@@ -183,6 +210,9 @@ class VideoDetailHeaderAdapter(
         private val onCoinClick: () -> Unit,
         private val onFavClick: () -> Unit,
         private val onSecondaryClick: () -> Unit,
+        private val onUpCardFocused: (() -> Unit)?,
+        private val onPrimaryActionFocused: (() -> Unit)?,
+        private val onSecondaryActionFocused: (() -> Unit)?,
         private val onPartsOrderClick: () -> Unit,
         private val onSeasonOrderClick: () -> Unit,
         private val onPartCardClick: (card: VideoCard, index: Int) -> Unit,
@@ -222,6 +252,16 @@ class VideoDetailHeaderAdapter(
                 if (tab.isNotBlank()) onTabClick(tab)
             }
 
+            binding.cardUp.setOnFocusChangeListener { _, hasFocus ->
+                if (hasFocus) onUpCardFocused?.invoke()
+            }
+            binding.btnPlay.setOnFocusChangeListener { _, hasFocus ->
+                if (hasFocus) onPrimaryActionFocused?.invoke()
+            }
+            binding.btnSecondary.setOnFocusChangeListener { _, hasFocus ->
+                if (hasFocus) onSecondaryActionFocused?.invoke()
+            }
+
             binding.btnLike.setOnClickListener { onLikeClick() }
             binding.btnCoin.setOnClickListener { onCoinClick() }
             binding.btnFav.setOnClickListener { onFavClick() }
@@ -257,10 +297,14 @@ class VideoDetailHeaderAdapter(
             partsCards: List<VideoCard>,
             partsSelectedKey: String?,
             partsOrderReversed: Boolean,
+            partsAutoScrollToSelected: Boolean,
+            partsScrollToStart: Boolean,
             seasonHeaderText: String?,
             seasonCards: List<VideoCard>,
             seasonSelectedKey: String?,
             seasonOrderReversed: Boolean,
+            seasonAutoScrollToSelected: Boolean,
+            seasonScrollToStart: Boolean,
             recommendHeaderText: String?,
         ) {
             binding.tvTitle.text = title?.trim().takeIf { !it.isNullOrBlank() } ?: "-"
@@ -269,17 +313,20 @@ class VideoDetailHeaderAdapter(
             binding.tvMeta.isVisible = safeMeta != null
             binding.tvMeta.text = safeMeta.orEmpty()
 
+            applyCoverContainerRatio(usePosterCover)
+
             val safeCover = coverUrl?.trim().takeIf { !it.isNullOrBlank() }
-            binding.ivCoverPoster.isVisible = usePosterCover
+            binding.ivCoverPoster.isVisible = false
             binding.ivCover.alpha = 1f
             if (safeCover != null) {
-                if (usePosterCover) {
-                    binding.ivCover.setImageDrawable(null)
-                    ImageLoader.loadInto(binding.ivCoverPoster, ImageUrl.poster(safeCover))
-                } else {
-                    binding.ivCoverPoster.setImageDrawable(null)
-                    ImageLoader.loadInto(binding.ivCover, ImageUrl.cover(safeCover))
-                }
+                val loadUrl =
+                    if (usePosterCover) {
+                        ImageUrl.poster(safeCover)
+                    } else {
+                        ImageUrl.cover(safeCover)
+                    }
+                ImageLoader.loadInto(binding.ivCover, loadUrl)
+                binding.ivCoverPoster.setImageDrawable(null)
             } else {
                 binding.ivCover.setImageDrawable(null)
                 binding.ivCoverPoster.setImageDrawable(null)
@@ -331,7 +378,14 @@ class VideoDetailHeaderAdapter(
                     }
                 this.partsSelectedKey = partsSelectedKey
                 partsAdapter.submit(partsCards)
-                maybeAutoScrollParts(partsCards, partsSelectedKey)
+                when {
+                    partsScrollToStart -> {
+                        lastPartsAutoScrollKey = null
+                        scrollPartsToStart()
+                    }
+                    partsAutoScrollToSelected -> maybeAutoScrollParts(partsCards, partsSelectedKey)
+                    else -> lastPartsAutoScrollKey = null
+                }
             } else {
                 binding.tvPartsOrder.text = ""
                 this.partsSelectedKey = null
@@ -360,7 +414,14 @@ class VideoDetailHeaderAdapter(
                     }
                 this.seasonSelectedKey = seasonSelectedKey
                 seasonAdapter.submit(seasonCards)
-                maybeAutoScrollSeason(seasonCards, seasonSelectedKey)
+                when {
+                    seasonScrollToStart -> {
+                        lastSeasonAutoScrollKey = null
+                        scrollSeasonToStart()
+                    }
+                    seasonAutoScrollToSelected -> maybeAutoScrollSeason(seasonCards, seasonSelectedKey)
+                    else -> lastSeasonAutoScrollKey = null
+                }
             } else {
                 binding.tvSeasonOrder.text = ""
                 this.seasonSelectedKey = null
@@ -375,6 +436,23 @@ class VideoDetailHeaderAdapter(
             // Nested horizontal lists can change their measured height after adapter updates;
             // ensure the header item gets re-measured to avoid overlap with following items.
             binding.root.requestLayout()
+        }
+
+        private fun applyCoverContainerRatio(usePosterCover: Boolean) {
+            val params = binding.clCoverContainer.layoutParams as? ConstraintLayout.LayoutParams ?: return
+            val targetRatio = if (usePosterCover) "9:16" else "16:9"
+            val targetWidthPx =
+                binding.root.resources.getDimensionPixelSize(
+                    if (usePosterCover) {
+                        blbl.cat3399.R.dimen.video_detail_header_cover_width_poster
+                    } else {
+                        blbl.cat3399.R.dimen.video_detail_header_cover_width
+                    },
+                )
+            if (params.dimensionRatio == targetRatio && params.width == targetWidthPx) return
+            params.dimensionRatio = targetRatio
+            params.width = targetWidthPx
+            binding.clCoverContainer.layoutParams = params
         }
 
         private fun maybeAutoScrollParts(partsCards: List<VideoCard>, selectedKey: String?) {
@@ -406,6 +484,20 @@ class VideoDetailHeaderAdapter(
             binding.recyclerSeason.post {
                 val lm = binding.recyclerSeason.layoutManager as? LinearLayoutManager ?: return@post
                 lm.scrollToPositionWithOffset(idx, binding.recyclerSeason.paddingLeft)
+            }
+        }
+
+        private fun scrollPartsToStart() {
+            binding.recyclerParts.post {
+                val lm = binding.recyclerParts.layoutManager as? LinearLayoutManager ?: return@post
+                lm.scrollToPositionWithOffset(0, binding.recyclerParts.paddingLeft)
+            }
+        }
+
+        private fun scrollSeasonToStart() {
+            binding.recyclerSeason.post {
+                val lm = binding.recyclerSeason.layoutManager as? LinearLayoutManager ?: return@post
+                lm.scrollToPositionWithOffset(0, binding.recyclerSeason.paddingLeft)
             }
         }
 

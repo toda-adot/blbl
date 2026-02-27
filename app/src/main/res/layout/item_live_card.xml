@@ -98,7 +98,7 @@
                     android:shadowDx="0"
                     android:shadowDy="1"
                     android:shadowRadius="2"
-                    android:textColor="@color/blbl_text"
+                    android:textColor="@color/blbl_text_on_media"
                     android:textSize="@dimen/video_card_stat_text_size" />
             </LinearLayout>
 

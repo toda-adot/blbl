@@ -21,6 +21,7 @@ import blbl.cat3399.core.ui.BaseActivity
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.core.ui.ThemeColor
 import blbl.cat3399.core.ui.cloneInUserScale
+import blbl.cat3399.core.ui.smoothScrollToPositionStart
 import blbl.cat3399.core.util.Format
 import blbl.cat3399.databinding.ActivityVideoDetailBinding
 import blbl.cat3399.feature.player.PlayerActivity
@@ -134,16 +135,18 @@ class BangumiDetailActivity : BaseActivity() {
                 onCoinClick = { /* no-op */ },
                 onFavClick = { /* no-op */ },
                 onSecondaryClick = { AppToast.show(this, "暂不支持操作") },
+                onPrimaryActionFocused = { smoothScrollHeaderToTop() },
+                onSecondaryActionFocused = { smoothScrollHeaderToTop() },
                 onPartsOrderClick = {
                     episodeOrderReversed = !episodeOrderReversed
                     BiliClient.prefs.pgcEpisodeOrderReversed = episodeOrderReversed
-                    applyHeader()
-                    binding.recycler.post { headerAdapter.requestFocusPlay() }
+                    applyHeader(partsScrollToStart = true)
+                    binding.recycler.post { headerAdapter.requestFocusPartsOrder() }
                 },
                 onSeasonOrderClick = {
                     extrasOrderReversed = !extrasOrderReversed
-                    applyHeader()
-                    binding.recycler.post { headerAdapter.requestFocusPlay() }
+                    applyHeader(seasonScrollToStart = true)
+                    binding.recycler.post { headerAdapter.requestFocusSeasonOrder() }
                 },
                 onPartCardClick = { card, _ -> playEpisodeCard(card, listKind = "main") },
                 onSeasonCardClick = { card, _ -> playEpisodeCard(card, listKind = "extra") },
@@ -157,6 +160,12 @@ class BangumiDetailActivity : BaseActivity() {
 
         applyHeader()
         binding.recycler.post { headerAdapter.requestFocusPlay() }
+    }
+
+    private fun smoothScrollHeaderToTop() {
+        if (!this::binding.isInitialized) return
+        if (!binding.recycler.canScrollVertically(-1)) return
+        binding.recycler.smoothScrollToPositionStart(0)
     }
 
     private fun load() {
@@ -245,7 +254,10 @@ class BangumiDetailActivity : BaseActivity() {
             }
     }
 
-    private fun applyHeader() {
+    private fun applyHeader(
+        partsScrollToStart: Boolean = false,
+        seasonScrollToStart: Boolean = false,
+    ) {
         if (!this::headerAdapter.isInitialized) return
         val displayEpisodeCards = if (episodeOrderReversed) mainEpisodeCards.asReversed() else mainEpisodeCards
         val displayExtrasCards = if (extrasOrderReversed) extrasCards.asReversed() else extrasCards
@@ -275,10 +287,14 @@ class BangumiDetailActivity : BaseActivity() {
             partsCards = displayEpisodeCards,
             partsSelectedKey = mainSelectedKey,
             partsOrderReversed = episodeOrderReversed,
+            partsAutoScrollToSelected = !partsScrollToStart,
+            partsScrollToStart = partsScrollToStart,
             seasonHeaderText = extrasHeader,
             seasonCards = displayExtrasCards,
             seasonSelectedKey = null,
             seasonOrderReversed = extrasOrderReversed,
+            seasonAutoScrollToSelected = !seasonScrollToStart,
+            seasonScrollToStart = seasonScrollToStart,
             recommendHeaderText = null,
         )
     }
@@ -349,26 +365,28 @@ class BangumiDetailActivity : BaseActivity() {
 
     private fun bangumiEpToVideoCard(ep: BangumiEpisode, defaultIndex: Int, sectionTitle: String?): VideoCard {
         val rawTitle = ep.title.trim().takeIf { it.isNotBlank() } ?: "-"
-        val title =
+        val episodeNumberText =
+            when {
+                EP_INDEX_ONLY_REGEX.matches(rawTitle) -> rawTitle
+                else -> parseEpisodeNumber(rawTitle)?.let { formatEpisodeNumber(it) }
+            } ?: parseEpisodeNumber(ep.longTitle)?.let { formatEpisodeNumber(it) }
+                ?: (defaultIndex + 1).toString()
+
+        val longTitle = ep.longTitle.trim().takeIf { it.isNotBlank() }
+        val fallbackTitle =
             if (EP_INDEX_ONLY_REGEX.matches(rawTitle)) {
                 "第${rawTitle}话"
             } else {
                 rawTitle
             }
-        val longTitle = ep.longTitle.trim().takeIf { it.isNotBlank() }
-        val subtitle =
-            when {
-                sectionTitle != null && longTitle != null -> "$sectionTitle · $longTitle"
-                sectionTitle != null -> sectionTitle
-                else -> longTitle
-            }
+        val title = longTitle ?: fallbackTitle.takeIf { it.isNotBlank() } ?: "第${defaultIndex + 1}集"
 
         return VideoCard(
             bvid = ep.bvid.orEmpty(),
             cid = ep.cid,
             aid = ep.aid,
             epId = ep.epId,
-            title = title.takeIf { it.isNotBlank() } ?: "第${defaultIndex + 1}集",
+            title = title,
             coverUrl = ep.coverUrl.orEmpty(),
             durationSec = 0,
             ownerName = "",
@@ -377,7 +395,8 @@ class BangumiDetailActivity : BaseActivity() {
             view = null,
             danmaku = null,
             pubDate = null,
-            pubDateText = subtitle,
+            pubDateText = null,
+            coverLeftBottomText = episodeNumberText.takeIf { sectionTitle.isNullOrBlank() },
         )
     }
 
@@ -416,6 +435,12 @@ class BangumiDetailActivity : BaseActivity() {
         s.toDoubleOrNull()?.let { return it }
         val match = EP_NUMBER_REGEX.find(s) ?: return null
         return match.value.toDoubleOrNull()
+    }
+
+    private fun formatEpisodeNumber(number: Double): String {
+        val asLong = number.toLong()
+        if (number == asLong.toDouble()) return asLong.toString()
+        return number.toString()
     }
 
     private fun cardStableKey(card: VideoCard): String =

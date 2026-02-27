@@ -57,6 +57,22 @@
                 app:layout_constraintTop_toTopOf="@id/guideline_cover_fade_top" />
 
             <TextView
+                android:id="@+id/tv_cover_left_bottom"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_margin="@dimen/video_card_text_margin"
+                android:shadowColor="#CC000000"
+                android:shadowDx="0"
+                android:shadowDy="1"
+                android:shadowRadius="2"
+                android:textColor="@color/blbl_text_on_media"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:visibility="gone"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintStart_toStartOf="parent" />
+
+            <TextView
                 android:id="@+id/tv_charge_badge"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -84,7 +100,7 @@
                 android:shadowDx="0"
                 android:shadowDy="1"
                 android:shadowRadius="2"
-                android:textColor="@color/blbl_text"
+                android:textColor="@color/blbl_text_on_media"
                 android:textSize="@dimen/video_card_duration_text_size"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintEnd_toEndOf="parent" />
@@ -117,7 +133,7 @@
                     android:shadowDx="0"
                     android:shadowDy="1"
                     android:shadowRadius="2"
-                    android:textColor="@color/blbl_text"
+                    android:textColor="@color/blbl_text_on_media"
                     android:textSize="@dimen/video_card_stat_text_size" />
 
                 <ImageView
@@ -138,7 +154,7 @@
                     android:shadowDx="0"
                     android:shadowDy="1"
                     android:shadowRadius="2"
-                    android:textColor="@color/blbl_text"
+                    android:textColor="@color/blbl_text_on_media"
                     android:textSize="@dimen/video_card_stat_text_size" />
 
             </LinearLayout>

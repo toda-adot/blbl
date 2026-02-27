@@ -87,15 +87,24 @@ class VideoCardAdapter(
 
             binding.root.isSelected = isSelected?.invoke(item, position) == true
 
+            val coverLeftBottomText = item.coverLeftBottomText?.trim()
+            val isEpisodeStyleCard = item.coverLeftBottomText != null
+            binding.tvCoverLeftBottom.isVisible = coverLeftBottomText?.isNotBlank() == true
+            binding.tvCoverLeftBottom.text = coverLeftBottomText.orEmpty()
+
             binding.tvTitle.text = item.title
-            binding.tvSubtitle.text =
+            val subtitleText =
                 item.pubDateText
                     ?: if (item.ownerName.isBlank()) "" else "UP ${item.ownerName}"
+            binding.tvSubtitle.text = subtitleText
             val pubDateText = item.pubDate?.let { Format.pubDateText(it) }.orEmpty()
             binding.tvPubdate.text = pubDateText
-            binding.tvPubdate.isVisible = pubDateText.isNotBlank()
+            val showSubtitleRow = !isEpisodeStyleCard && (subtitleText.isNotBlank() || pubDateText.isNotBlank())
+            binding.llSubtitle.isVisible = showSubtitleRow
+            binding.tvSubtitle.isVisible = showSubtitleRow && subtitleText.isNotBlank()
+            binding.tvPubdate.isVisible = showSubtitleRow && pubDateText.isNotBlank()
 
-            val showDuration = item.durationSec > 0
+            val showDuration = !isEpisodeStyleCard && item.durationSec > 0
             binding.tvDuration.isVisible = showDuration
             if (showDuration) {
                 binding.tvDuration.text = Format.duration(item.durationSec)
@@ -103,7 +112,7 @@ class VideoCardAdapter(
 
             val viewCount = item.view?.takeIf { it > 0 }
             val danmakuCount = item.danmaku?.takeIf { it > 0 }
-            val showStats = viewCount != null || danmakuCount != null
+            val showStats = !isEpisodeStyleCard && (viewCount != null || danmakuCount != null)
             binding.llStats.isVisible = showStats
             binding.ivStatPlay.isVisible = viewCount != null
             binding.tvView.isVisible = viewCount != null
