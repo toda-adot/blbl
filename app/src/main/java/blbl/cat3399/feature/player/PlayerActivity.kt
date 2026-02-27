@@ -71,6 +71,7 @@ import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.core.ui.popup.PopupHost
 import blbl.cat3399.core.util.Format as BlblFormat
 import blbl.cat3399.feature.following.UpDetailActivity
+import blbl.cat3399.feature.my.BangumiDetailActivity
 import blbl.cat3399.feature.player.danmaku.DanmakuSessionSettings
 import blbl.cat3399.feature.player.engine.BlblPlayerEngine
 import blbl.cat3399.feature.player.engine.ExoPlayerEngine
@@ -79,6 +80,7 @@ import blbl.cat3399.feature.player.engine.IjkPlayerPlugin
 import blbl.cat3399.feature.player.engine.PlayerEngineKind
 import blbl.cat3399.feature.player.engine.PlaybackSource
 import blbl.cat3399.feature.settings.SettingsActivity
+import blbl.cat3399.feature.video.VideoDetailActivity
 import blbl.cat3399.databinding.ActivityPlayerBinding
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -1593,6 +1595,46 @@ class PlayerActivity : BaseActivity() {
         super.onDestroy()
     }
 
+    private fun openCurrentMediaDetail() {
+        val epId = currentEpId
+        if (epId != null && epId > 0L) {
+            requestDecoderReleaseOnStop(reason = "video_detail")
+            startActivity(
+                Intent(this, BangumiDetailActivity::class.java)
+                    .putExtra(BangumiDetailActivity.EXTRA_EP_ID, epId)
+                    .putExtra(BangumiDetailActivity.EXTRA_CONTINUE_EP_ID, epId)
+                    .putExtra(BangumiDetailActivity.EXTRA_IS_DRAMA, false),
+            )
+            return
+        }
+
+        val bvid = currentBvid.trim()
+        val aid = currentAid?.takeIf { it > 0L }
+        if (bvid.isBlank() && aid == null) {
+            AppToast.show(this, "缺少 bvid/aid")
+            return
+        }
+
+        requestDecoderReleaseOnStop(reason = "video_detail")
+        val title = binding.tvTitle.text?.toString()?.trim().orEmpty()
+        startActivity(
+            Intent(this, VideoDetailActivity::class.java)
+                .putExtra(VideoDetailActivity.EXTRA_BVID, bvid)
+                .putExtra(VideoDetailActivity.EXTRA_CID, currentCid.takeIf { it > 0L } ?: -1L)
+                .apply { aid?.let { putExtra(VideoDetailActivity.EXTRA_AID, it) } }
+                .apply { if (title.isNotBlank()) putExtra(VideoDetailActivity.EXTRA_TITLE, title) }
+                .apply {
+                    currentUpName?.takeIf { it.isNotBlank() }?.let { putExtra(VideoDetailActivity.EXTRA_OWNER_NAME, it) }
+                    currentUpAvatar?.takeIf { it.isNotBlank() }?.let { putExtra(VideoDetailActivity.EXTRA_OWNER_AVATAR, it) }
+                    currentUpMid.takeIf { it > 0L }?.let { putExtra(VideoDetailActivity.EXTRA_OWNER_MID, it) }
+                }
+                .apply {
+                    pageListToken?.takeIf { it.isNotBlank() }?.let { putExtra(VideoDetailActivity.EXTRA_PLAYLIST_TOKEN, it) }
+                    pageListIndex.takeIf { it >= 0 }?.let { putExtra(VideoDetailActivity.EXTRA_PLAYLIST_INDEX, it) }
+                },
+        )
+    }
+
     private fun initControls(engine: BlblPlayerEngine) {
         val detector =
             GestureDetector(
@@ -1689,6 +1731,11 @@ class PlayerActivity : BaseActivity() {
 
         binding.btnComments.setOnClickListener {
             toggleCommentsPanel()
+        }
+
+        binding.btnDetail.setOnClickListener {
+            openCurrentMediaDetail()
+            setControlsVisible(true)
         }
 
         binding.btnSubtitle.setOnClickListener {

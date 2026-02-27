@@ -364,9 +364,14 @@ class AppPrefs(context: Context) {
             // - If the key exists (even if empty), respect it and only normalize (e.g. keep Play/Pause).
             if (!prefs.contains(KEY_PLAYER_OSD_BUTTONS)) return DEFAULT_PLAYER_OSD_BUTTONS
             val stored = loadStringList(KEY_PLAYER_OSD_BUTTONS)
-            return normalizePlayerOsdButtons(stored)
+            val normalized = normalizePlayerOsdButtons(stored)
+            return migratePlayerOsdDetailButtonIfNeeded(normalized)
         }
-        set(value) = saveStringList(KEY_PLAYER_OSD_BUTTONS, normalizePlayerOsdButtons(value))
+        set(value) {
+            saveStringList(KEY_PLAYER_OSD_BUTTONS, normalizePlayerOsdButtons(value))
+            // Once user manually configures OSD buttons, never force-enable new buttons again.
+            prefs.edit().putBoolean(KEY_PLAYER_OSD_BUTTONS_DETAIL_MIGRATED, true).apply()
+        }
 
     var gridSpanCount: Int
         get() {
@@ -448,6 +453,18 @@ class AppPrefs(context: Context) {
             if (v.isNotBlank()) arr.put(v)
         }
         prefs.edit().putString(key, arr.toString()).apply()
+    }
+
+    private fun migratePlayerOsdDetailButtonIfNeeded(normalized: List<String>): List<String> {
+        if (prefs.getBoolean(KEY_PLAYER_OSD_BUTTONS_DETAIL_MIGRATED, false)) return normalized
+        // Requirement: auto-enable the new "Detail" button even for users who previously customized OSD.
+        // Do it only once so the user can later disable it in Settings.
+        prefs.edit().putBoolean(KEY_PLAYER_OSD_BUTTONS_DETAIL_MIGRATED, true).apply()
+        if (normalized.contains(PLAYER_OSD_BTN_DETAIL)) return normalized
+
+        val migrated = normalized + PLAYER_OSD_BTN_DETAIL
+        saveStringList(KEY_PLAYER_OSD_BUTTONS, migrated)
+        return migrated
     }
 
     private fun normalizePlayerOsdButtons(value: List<String>): List<String> {
@@ -545,6 +562,7 @@ class AppPrefs(context: Context) {
         private const val KEY_PLAYER_PERSISTENT_BOTTOM_PROGRESS = "player_persistent_bottom_progress"
         private const val KEY_PLAYER_PLAYBACK_MODE = "player_playback_mode"
         private const val KEY_PLAYER_OSD_BUTTONS = "player_osd_buttons"
+        private const val KEY_PLAYER_OSD_BUTTONS_DETAIL_MIGRATED = "player_osd_buttons_detail_migrated"
         private const val KEY_GRID_SPAN = "grid_span"
         private const val KEY_DYNAMIC_GRID_SPAN = "dynamic_grid_span"
         private const val KEY_PGC_GRID_SPAN = "pgc_grid_span"
@@ -583,6 +601,7 @@ class AppPrefs(context: Context) {
         const val PLAYER_OSD_BTN_SUBTITLE = "subtitle"
         const val PLAYER_OSD_BTN_DANMAKU = "danmaku"
         const val PLAYER_OSD_BTN_COMMENTS = "comments"
+        const val PLAYER_OSD_BTN_DETAIL = "detail"
         const val PLAYER_OSD_BTN_UP = "up"
         const val PLAYER_OSD_BTN_LIKE = "like"
         const val PLAYER_OSD_BTN_COIN = "coin"
@@ -597,6 +616,7 @@ class AppPrefs(context: Context) {
                 PLAYER_OSD_BTN_SUBTITLE,
                 PLAYER_OSD_BTN_DANMAKU,
                 PLAYER_OSD_BTN_COMMENTS,
+                PLAYER_OSD_BTN_DETAIL,
                 PLAYER_OSD_BTN_UP,
                 PLAYER_OSD_BTN_LIST_PANEL,
                 PLAYER_OSD_BTN_ADVANCED,
@@ -610,6 +630,7 @@ class AppPrefs(context: Context) {
                 PLAYER_OSD_BTN_SUBTITLE,
                 PLAYER_OSD_BTN_DANMAKU,
                 PLAYER_OSD_BTN_COMMENTS,
+                PLAYER_OSD_BTN_DETAIL,
                 PLAYER_OSD_BTN_UP,
                 PLAYER_OSD_BTN_LIKE,
                 PLAYER_OSD_BTN_COIN,

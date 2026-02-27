@@ -92,6 +92,7 @@
     <string name="player_list_tab_recommend">推荐</string>
     <string name="player_list_empty">暂无内容</string>
     <string name="player_btn_comments">评论</string>
+    <string name="player_btn_detail">视频详情页</string>
     <string name="player_btn_back">返回</string>
     <string name="player_panel_settings">设置</string>
     <string name="player_panel_comments">评论</string>

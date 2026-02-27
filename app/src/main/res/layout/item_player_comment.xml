@@ -23,7 +23,7 @@
             android:layout_height="wrap_content"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textColor="@color/blbl_text_secondary"
+            android:textColor="?android:attr/textColorSecondary"
             android:textSize="@dimen/player_comment_context_tag_text_size"
             android:visibility="gone"
             app:layout_constraintStart_toStartOf="parent"
@@ -47,7 +47,7 @@
             android:layout_marginStart="@dimen/player_comment_user_margin_start"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textColor="@color/blbl_text"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/player_comment_user_text_size"
             android:textStyle="bold"
             app:layout_constrainedWidth="true"
@@ -82,7 +82,7 @@
             android:layout_height="wrap_content"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textColor="@color/blbl_text_secondary"
+            android:textColor="?android:attr/textColorSecondary"
             android:textSize="@dimen/player_comment_time_text_size"
             app:layout_constraintBaseline_toBaselineOf="@id/tv_user"
             app:layout_constraintEnd_toEndOf="parent" />
@@ -94,7 +94,7 @@
             android:layout_marginTop="@dimen/player_comment_message_margin_top"
             android:ellipsize="end"
             android:maxLines="6"
-            android:textColor="@color/blbl_text"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/player_comment_message_text_size"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="@id/tv_user"
@@ -172,22 +172,22 @@
             <TextView
                 android:id="@+id/tv_reply_preview_1"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:textColor="@color/blbl_text_secondary"
-                android:textSize="@dimen/player_comment_reply_preview_text_size" />
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="?android:attr/textColorSecondary"
+            android:textSize="@dimen/player_comment_reply_preview_text_size" />
 
             <TextView
                 android:id="@+id/tv_reply_preview_2"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/player_comment_reply_preview_margin_top"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:textColor="@color/blbl_text_secondary"
-                android:textSize="@dimen/player_comment_reply_preview_text_size"
-                android:visibility="gone" />
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/player_comment_reply_preview_margin_top"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="?android:attr/textColorSecondary"
+            android:textSize="@dimen/player_comment_reply_preview_text_size"
+            android:visibility="gone" />
 
         </LinearLayout>
 
@@ -205,12 +205,12 @@
             <TextView
                 android:id="@+id/tv_like"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:textColor="@color/blbl_text_secondary"
-                android:textSize="@dimen/player_comment_meta_text_size"
-                android:visibility="gone" />
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="?android:attr/textColorSecondary"
+            android:textSize="@dimen/player_comment_meta_text_size"
+            android:visibility="gone" />
 
             <TextView
                 android:id="@+id/tv_reply"

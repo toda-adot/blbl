@@ -58,7 +58,7 @@
             android:id="@+id/btn_back"
             android:layout_width="@dimen/player_top_button_size"
             android:layout_height="@dimen/player_top_button_size"
-            android:background="@drawable/blbl_focus_bg_round"
+            android:background="?attr/blblFocusBgRound"
             android:focusable="true"
             android:padding="@dimen/player_top_button_padding"
             android:scaleType="fitCenter"
@@ -87,7 +87,7 @@
                 android:layout_marginEnd="@dimen/player_title_margin_end"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:textColor="@color/blbl_text"
+                android:textColor="?attr/colorOnSurface"
                 android:textSize="@dimen/player_title_text_size"
                 android:gravity="center_vertical" />
 
@@ -115,7 +115,7 @@
                         android:layout_height="@dimen/video_card_stat_icon_size"
                         android:contentDescription="@string/app_name"
                         android:src="@drawable/ic_player_watching"
-                        android:tint="@color/blbl_text_secondary" />
+                        android:tint="?android:attr/textColorSecondary" />
 
                     <TextView
                         android:id="@+id/tv_online"
@@ -125,7 +125,7 @@
                         android:ellipsize="end"
                         android:maxLines="1"
                         android:text="-人正在观看"
-                        android:textColor="@color/blbl_text_secondary"
+                        android:textColor="?android:attr/textColorSecondary"
                         android:textSize="@dimen/player_online_text_size" />
                 </LinearLayout>
 
@@ -143,7 +143,7 @@
                         android:layout_height="@dimen/video_card_stat_icon_size"
                         android:contentDescription="@string/app_name"
                         android:src="@drawable/ic_stat_play"
-                        android:tint="@color/blbl_text_secondary" />
+                        android:tint="?android:attr/textColorSecondary" />
 
                     <TextView
                         android:id="@+id/tv_view_count"
@@ -153,7 +153,7 @@
                         android:ellipsize="end"
                         android:maxLines="1"
                         android:text="-"
-                        android:textColor="@color/blbl_text_secondary"
+                        android:textColor="?android:attr/textColorSecondary"
                         android:textSize="@dimen/player_online_text_size" />
                 </LinearLayout>
 
@@ -164,7 +164,7 @@
                     android:layout_marginStart="10dp"
                     android:ellipsize="end"
                     android:maxLines="1"
-                    android:textColor="@color/blbl_text_secondary"
+                    android:textColor="?android:attr/textColorSecondary"
                     android:textSize="@dimen/player_online_text_size" />
             </LinearLayout>
         </LinearLayout>
@@ -177,7 +177,7 @@
             android:format12Hour="HH:mm"
             android:format24Hour="HH:mm"
             android:includeFontPadding="false"
-            android:textColor="@color/blbl_text"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/player_clock_text_size"
             android:textStyle="bold"
             app:layout_constraintBottom_toBottomOf="@id/btn_back"
@@ -188,7 +188,7 @@
             android:id="@+id/btn_settings"
             android:layout_width="@dimen/player_top_button_size"
             android:layout_height="@dimen/player_top_button_size"
-            android:background="@drawable/blbl_focus_bg_round"
+            android:background="?attr/blblFocusBgRound"
             android:focusable="true"
             android:padding="@dimen/player_top_button_padding"
             android:scaleType="fitCenter"
@@ -216,7 +216,7 @@
             android:id="@+id/seek_progress"
             android:layout_width="0dp"
             android:layout_height="@dimen/player_seekbar_touch_height"
-            android:background="@drawable/blbl_focus_bg_round"
+            android:background="?attr/blblFocusBgRound"
             android:layout_marginHorizontal="0dp"
             android:layout_marginBottom="@dimen/player_seekbar_margin_bottom"
             android:paddingHorizontal="0dp"
@@ -246,7 +246,7 @@
                 android:layout_width="?attr/playerOsdButtonTargetSize"
                 android:layout_height="?attr/playerOsdButtonTargetSize"
                 android:layout_marginEnd="?attr/playerOsdGap"
-                android:background="@drawable/blbl_focus_bg_round"
+                android:background="?attr/blblFocusBgRound"
                 android:contentDescription="@string/app_name"
                 android:focusable="true"
                 android:padding="?attr/playerOsdPadTransport"
@@ -260,7 +260,7 @@
                 android:layout_width="?attr/playerOsdButtonTargetSize"
                 android:layout_height="?attr/playerOsdButtonTargetSize"
                 android:layout_marginEnd="?attr/playerOsdGap"
-                android:background="@drawable/blbl_focus_bg_round"
+                android:background="?attr/blblFocusBgRound"
                 android:contentDescription="@string/app_name"
             android:focusable="true"
             android:padding="?attr/playerOsdPadTransport"
@@ -273,7 +273,7 @@
                 android:layout_width="?attr/playerOsdButtonTargetSize"
                 android:layout_height="?attr/playerOsdButtonTargetSize"
                 android:layout_marginEnd="?attr/playerOsdGap"
-                android:background="@drawable/blbl_focus_bg_round"
+                android:background="?attr/blblFocusBgRound"
                 android:contentDescription="@string/app_name"
             android:focusable="true"
             android:padding="?attr/playerOsdPadTransport"
@@ -286,7 +286,7 @@
                 android:layout_width="?attr/playerOsdButtonTargetSize"
                 android:layout_height="?attr/playerOsdButtonTargetSize"
                 android:layout_marginEnd="?attr/playerOsdGap"
-                android:background="@drawable/blbl_focus_bg_round"
+                android:background="?attr/blblFocusBgRound"
                 android:focusable="true"
             android:padding="?attr/playerOsdPadNormal"
             android:scaleType="fitCenter"
@@ -299,7 +299,7 @@
                 android:layout_width="?attr/playerOsdButtonTargetSize"
                 android:layout_height="?attr/playerOsdButtonTargetSize"
                 android:layout_marginEnd="?attr/playerOsdGap"
-                android:background="@drawable/blbl_focus_bg_round"
+                android:background="?attr/blblFocusBgRound"
                 android:contentDescription="@string/app_name"
                 android:focusable="true"
                 android:padding="?attr/playerOsdPadNormal"
@@ -312,7 +312,7 @@
                 android:layout_width="?attr/playerOsdButtonTargetSize"
                 android:layout_height="?attr/playerOsdButtonTargetSize"
                 android:layout_marginEnd="?attr/playerOsdGap"
-                android:background="@drawable/blbl_focus_bg_round"
+                android:background="?attr/blblFocusBgRound"
                 android:contentDescription="@string/player_btn_comments"
                 android:focusable="true"
                 android:padding="?attr/playerOsdPadNormal"
@@ -325,7 +325,7 @@
                 android:layout_width="?attr/playerOsdButtonTargetSize"
                 android:layout_height="?attr/playerOsdButtonTargetSize"
                 android:layout_marginEnd="?attr/playerOsdGap"
-                android:background="@drawable/blbl_focus_bg_round"
+                android:background="?attr/blblFocusBgRound"
                 android:contentDescription="@string/app_name"
                 android:focusable="true"
                 android:padding="?attr/playerOsdPadNormal"
@@ -338,7 +338,7 @@
                 android:layout_width="?attr/playerOsdButtonTargetSize"
                 android:layout_height="?attr/playerOsdButtonTargetSize"
                 android:layout_marginEnd="?attr/playerOsdGap"
-                android:background="@drawable/blbl_focus_bg_round"
+                android:background="?attr/blblFocusBgRound"
                 android:contentDescription="@string/app_name"
                 android:focusable="true"
             android:padding="?attr/playerOsdPadSmall"
@@ -352,7 +352,7 @@
                 android:layout_width="?attr/playerOsdButtonTargetSize"
                 android:layout_height="?attr/playerOsdButtonTargetSize"
                 android:layout_marginEnd="?attr/playerOsdGap"
-                android:background="@drawable/blbl_focus_bg_round"
+                android:background="?attr/blblFocusBgRound"
                 android:contentDescription="@string/app_name"
                 android:focusable="true"
             android:padding="?attr/playerOsdPadSmall"
@@ -366,7 +366,7 @@
                 android:layout_width="?attr/playerOsdButtonTargetSize"
                 android:layout_height="?attr/playerOsdButtonTargetSize"
                 android:layout_marginEnd="?attr/playerOsdGap"
-                android:background="@drawable/blbl_focus_bg_round"
+                android:background="?attr/blblFocusBgRound"
                 android:contentDescription="@string/app_name"
                 android:focusable="true"
             android:padding="?attr/playerOsdPadSmall"
@@ -380,7 +380,7 @@
                 android:layout_width="?attr/playerOsdButtonTargetSize"
                 android:layout_height="?attr/playerOsdButtonTargetSize"
                 android:layout_marginEnd="?attr/playerOsdGap"
-                android:background="@drawable/blbl_focus_bg_round"
+                android:background="?attr/blblFocusBgRound"
                 android:contentDescription="@string/player_btn_list_panel"
                 android:focusable="true"
                 android:padding="?attr/playerOsdPadSmall"
@@ -389,10 +389,24 @@
                 android:tint="@color/player_button_tint" />
 
             <ImageButton
+                android:id="@+id/btn_detail"
+                android:layout_width="?attr/playerOsdButtonTargetSize"
+                android:layout_height="?attr/playerOsdButtonTargetSize"
+                android:layout_marginEnd="?attr/playerOsdGap"
+                android:background="?attr/blblFocusBgRound"
+                android:contentDescription="@string/player_btn_detail"
+                android:focusable="true"
+                android:padding="?attr/playerOsdPadSmall"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_player_detail"
+                android:tint="@color/player_button_tint"
+                android:visibility="gone" />
+
+            <ImageButton
                 android:id="@+id/btn_advanced"
                 android:layout_width="?attr/playerOsdButtonTargetSize"
                 android:layout_height="?attr/playerOsdButtonTargetSize"
-                android:background="@drawable/blbl_focus_bg_round"
+                android:background="?attr/blblFocusBgRound"
                 android:contentDescription="@string/app_name"
                 android:focusable="true"
             android:padding="?attr/playerOsdPadSmall"
@@ -408,7 +422,7 @@
             android:layout_marginEnd="@dimen/player_time_margin_end"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textColor="@color/blbl_text"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/player_time_text_size"
             app:layout_constraintBottom_toBottomOf="@id/controls_row"
             app:layout_constraintEnd_toEndOf="parent"
@@ -476,7 +490,7 @@
             android:layout_marginBottom="@dimen/player_seek_osd_margin_bottom"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textColor="@color/blbl_text"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/player_time_text_size"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
@@ -501,7 +515,7 @@
         android:layout_marginEnd="10dp"
         android:background="@color/player_overlay_bg"
         android:padding="10dp"
-        android:textColor="@color/blbl_text"
+        android:textColor="?attr/colorOnSurface"
         android:textSize="13sp"
         android:visibility="gone"
         app:layout_constraintEnd_toEndOf="@id/player_view"
@@ -517,7 +531,7 @@
         android:background="@color/player_overlay_bg"
         android:paddingHorizontal="@dimen/player_seek_hint_padding_h"
         android:paddingVertical="@dimen/player_seek_hint_padding_v"
-        android:textColor="@color/blbl_text"
+        android:textColor="?attr/colorOnSurface"
         android:textSize="@dimen/player_seek_hint_text_size"
         android:visibility="gone"
         app:layout_constraintBottom_toTopOf="@id/barrier_player_bottom_overlay_top"
@@ -662,7 +676,7 @@
                     android:maxLines="2"
                     android:padding="16dp"
                     android:text="@string/player_list_empty"
-                    android:textColor="@color/blbl_text_secondary"
+                    android:textColor="?android:attr/textColorSecondary"
                     android:textSize="14sp"
                     android:visibility="gone" />
 
@@ -745,7 +759,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/player_comment_sort"
-                    android:textColor="@color/blbl_text_secondary"
+                    android:textColor="?android:attr/textColorSecondary"
                     android:textSize="@dimen/player_comment_sort_label_text_size" />
 
                 <TextView
@@ -762,7 +776,7 @@
                     android:paddingVertical="@dimen/player_comment_sort_chip_padding_v"
                     android:stateListAnimator="@animator/blbl_focus_scale"
                     android:text="@string/player_comment_sort_hot"
-                    android:textColor="@color/blbl_text"
+                    android:textColor="?attr/colorOnSurface"
                     android:textSize="@dimen/player_comment_sort_chip_text_size" />
 
                 <TextView
@@ -780,7 +794,7 @@
                     android:paddingVertical="@dimen/player_comment_sort_chip_padding_v"
                     android:stateListAnimator="@animator/blbl_focus_scale"
                     android:text="@string/player_comment_sort_new"
-                    android:textColor="@color/blbl_text"
+                    android:textColor="?attr/colorOnSurface"
                     android:textSize="@dimen/player_comment_sort_chip_text_size" />
             </LinearLayout>
 
@@ -824,7 +838,7 @@
                     android:gravity="center"
                     android:padding="@dimen/player_comments_hint_padding"
                     android:text="@string/player_comment_loading"
-                    android:textColor="@color/blbl_text_secondary"
+                    android:textColor="?android:attr/textColorSecondary"
                     android:textSize="@dimen/player_comments_hint_text_size"
                     android:visibility="gone" />
 
