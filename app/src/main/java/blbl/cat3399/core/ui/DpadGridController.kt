@@ -1,8 +1,10 @@
 package blbl.cat3399.core.ui
 
+import android.os.SystemClock
 import android.view.FocusFinder
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewGroup
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -87,8 +89,62 @@ internal class DpadGridController(
 
     private var installed: Boolean = false
     private var pendingFocusAfterLoadMoreAnchorPos: Int = RecyclerView.NO_POSITION
+    private var pendingFocusAfterLoadMoreTargetPos: Int = RecyclerView.NO_POSITION
     private val focusRetryDelayMillis: Long = 16L
     private val focusRetryMaxAttempts: Int = 30
+    private var focusParkedDescendantFocusability: Int? = null
+    private val focusProtectWindowMs: Long = 500L
+    private var lastVerticalNavAtMs: Long = 0L
+    private var lastVerticalNavDirection: Int = View.FOCUS_DOWN
+    private var lastKnownFocusedAdapterPos: Int = RecyclerView.NO_POSITION
+    private var lastKnownFocusedSpanIndex: Int? = null
+    private var detachFocusRestoreToken: Int = 0
+
+    /**
+     * RecyclerView-level fallback for the brief moments when:
+     * - The grid has focus but no child item currently holds focus (e.g. initial load, async updates),
+     * - Or the focused item is being rebound and doesn't reliably provide adapter positions.
+     *
+     * Without this, DPAD_DOWN can bubble to the system and the framework may pick an "arbitrary"
+     * fallback focus target outside the content area (often the left sidebar).
+     */
+    private val recyclerKeyListener =
+        View.OnKeyListener { _, keyCode, event ->
+            if (!installed) return@OnKeyListener false
+            if (!config.isEnabled()) return@OnKeyListener false
+            if (event.action != KeyEvent.ACTION_DOWN) return@OnKeyListener false
+            if (!recyclerView.isFocused) return@OnKeyListener false
+
+            when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                    markVerticalNav(View.FOCUS_DOWN)
+                    handleRecyclerFocusedDpadDown()
+                }
+
+                KeyEvent.KEYCODE_DPAD_UP -> {
+                    markVerticalNav(View.FOCUS_UP)
+                    // If the user navigates away while a load-more focus jump is pending,
+                    // cancel it and restore normal focus behavior.
+                    if (pendingFocusAfterLoadMoreAnchorPos != RecyclerView.NO_POSITION) {
+                        clearPendingFocusAfterLoadMore()
+                    }
+                    // We intentionally don't add special handling here: let the system focus-search
+                    // move focus out of the RecyclerView (e.g. to tabs/header) if applicable.
+                    false
+                }
+
+                KeyEvent.KEYCODE_DPAD_LEFT,
+                KeyEvent.KEYCODE_DPAD_RIGHT,
+                -> {
+                    if (pendingFocusAfterLoadMoreAnchorPos != RecyclerView.NO_POSITION) {
+                        clearPendingFocusAfterLoadMore()
+                    }
+                    false
+                }
+
+                else -> false
+            }
+        }
 
     private val childListener =
         object : RecyclerView.OnChildAttachStateChangeListener {
@@ -97,6 +153,7 @@ internal class DpadGridController(
                     view.setTag(R.id.tag_long_press_handled, false)
                 }
                 view.setOnKeyListener { v, keyCode, event ->
+                    if (!installed) return@setOnKeyListener false
                     if (!config.isEnabled()) return@setOnKeyListener false
 
                     if (config.enableCenterLongPressToLongClick && handleCenterLongPress(v, keyCode, event)) {
@@ -105,23 +162,40 @@ internal class DpadGridController(
 
                     if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
 
-                    val holder = recyclerView.findContainingViewHolder(v) ?: return@setOnKeyListener false
-                    val pos =
-                        holder.bindingAdapterPosition
-                            .takeIf { it != RecyclerView.NO_POSITION }
-                            ?: return@setOnKeyListener false
-
                     when (keyCode) {
-                        KeyEvent.KEYCODE_DPAD_UP -> handleDpadUp(pos)
+                        KeyEvent.KEYCODE_DPAD_UP -> {
+                            markVerticalNav(View.FOCUS_UP)
+                            val pos = resolveAdapterPosition(v)
+                            if (pos != null) {
+                                rememberLastKnownFocus(position = pos)
+                                handleDpadUp(pos)
+                            } else {
+                                // During adapter updates, a focused view can transiently report NO_POSITION.
+                                // Consume the event to prevent focus escaping to other containers.
+                                config.consumeUpAtTopEdge
+                            }
+                        }
+
                         KeyEvent.KEYCODE_DPAD_LEFT -> handleDpadLeft(v)
                         KeyEvent.KEYCODE_DPAD_RIGHT -> handleDpadRight(v)
-                        KeyEvent.KEYCODE_DPAD_DOWN -> handleDpadDown(v, pos)
+                        KeyEvent.KEYCODE_DPAD_DOWN -> {
+                            markVerticalNav(View.FOCUS_DOWN)
+                            val pos = resolveAdapterPosition(v)
+                            if (pos != null) {
+                                rememberLastKnownFocus(position = pos)
+                                handleDpadDown(v, pos)
+                            } else {
+                                handleDpadDownFallback(v)
+                            }
+                        }
+
                         else -> false
                     }
                 }
             }
 
             override fun onChildViewDetachedFromWindow(view: View) {
+                maybeProtectFocusOnChildDetach(view)
                 view.setOnKeyListener(null)
                 if (config.enableCenterLongPressToLongClick) {
                     view.setTag(R.id.tag_long_press_handled, false)
@@ -132,18 +206,31 @@ internal class DpadGridController(
     fun install() {
         if (installed) return
         installed = true
+        recyclerView.setOnKeyListener(recyclerKeyListener)
         recyclerView.addOnChildAttachStateChangeListener(childListener)
+        // Ensure already-attached children are covered (listener only fires for future attaches).
+        for (i in 0 until recyclerView.childCount) {
+            childListener.onChildViewAttachedToWindow(recyclerView.getChildAt(i))
+        }
     }
 
     fun release() {
         if (!installed) return
         installed = false
+        unparkFocusInRecyclerViewIfNeeded()
+        detachFocusRestoreToken++
         clearPendingFocusAfterLoadMore()
         recyclerView.removeOnChildAttachStateChangeListener(childListener)
+        recyclerView.setOnKeyListener(null)
+        for (i in 0 until recyclerView.childCount) {
+            childListener.onChildViewDetachedFromWindow(recyclerView.getChildAt(i))
+        }
     }
 
     fun clearPendingFocusAfterLoadMore() {
         pendingFocusAfterLoadMoreAnchorPos = RecyclerView.NO_POSITION
+        pendingFocusAfterLoadMoreTargetPos = RecyclerView.NO_POSITION
+        unparkFocusInRecyclerViewIfNeeded()
     }
 
     fun consumePendingFocusAfterLoadMore(): Boolean {
@@ -179,16 +266,46 @@ internal class DpadGridController(
             return false
         }
 
+        val existingTarget = pendingFocusAfterLoadMoreTargetPos
+        if (existingTarget != RecyclerView.NO_POSITION) {
+            // A focus jump is already in progress; don't restart it, but still validate state.
+            if (existingTarget !in 0 until itemCount) {
+                clearPendingFocusAfterLoadMore()
+                return false
+            }
+            return true
+        }
+
         val candidatePos =
             when {
                 anchorPos + spanCount in 0 until itemCount -> anchorPos + spanCount
                 anchorPos + 1 in 0 until itemCount -> anchorPos + 1
                 else -> null
             }
-        clearPendingFocusAfterLoadMore()
-        if (candidatePos == null) return false
+        if (candidatePos == null) {
+            // No "next row" available (e.g. load-more returned empty / end reached). If focus was
+            // parked on RecyclerView, restore it back to the last known anchor item so the user
+            // doesn't get stuck on an unfocused container.
+            val fallbackPos = anchorPos.coerceIn(0, itemCount - 1)
+            clearPendingFocusAfterLoadMore()
+            scrollAndFocusAdapterPosition(fallbackPos, smooth = false)
+            return true
+        }
 
-        scrollAndFocusAdapterPosition(candidatePos, smooth = true)
+        pendingFocusAfterLoadMoreTargetPos = candidatePos
+        // Keep focus "frozen" on RecyclerView while new children are being attached/recycled.
+        parkFocusInRecyclerViewForLoadMore(keepDescendantFocusabilityOverridden = true)
+
+        scrollAndFocusAdapterPosition(
+            candidatePos,
+            smooth = true,
+            onFocused = {
+                // Only clear when the intended target focus jump succeeds.
+                if (pendingFocusAfterLoadMoreTargetPos == candidatePos) {
+                    clearPendingFocusAfterLoadMore()
+                }
+            },
+        )
         return true
     }
 
@@ -214,6 +331,211 @@ internal class DpadGridController(
             return true
         }
         return false
+    }
+
+    private fun handleRecyclerFocusedDpadDown(): Boolean {
+        // When a load-more focus jump is pending, keep focus "parked" on RecyclerView until the
+        // new items are appended and consumePendingFocusAfterLoadMore() moves focus to the target.
+        if (pendingFocusAfterLoadMoreAnchorPos != RecyclerView.NO_POSITION) {
+            // Make sure focus stays on RecyclerView itself during adapter updates.
+            parkFocusInRecyclerViewForLoadMore(keepDescendantFocusabilityOverridden = true)
+            return true
+        }
+
+        val itemCount = recyclerView.adapter?.itemCount ?: 0
+        if (itemCount <= 0) {
+            // Data not ready yet: keep focus "parked" in the content area.
+            return true
+        }
+
+        val candidatePos = (firstVisibleAdapterPosition() ?: 0).coerceIn(0, itemCount - 1)
+        scrollAndFocusAdapterPosition(candidatePos, smooth = false)
+        return true
+    }
+
+    private fun markVerticalNav(direction: Int) {
+        lastVerticalNavAtMs = SystemClock.uptimeMillis()
+        lastVerticalNavDirection = direction
+    }
+
+    private fun rememberLastKnownFocus(position: Int) {
+        lastKnownFocusedAdapterPos = position
+        val spanCount = spanCountForLayoutManager()
+        if (spanCount == null || spanCount <= 0) {
+            lastKnownFocusedSpanIndex = null
+            return
+        }
+        val lm = recyclerView.layoutManager
+        lastKnownFocusedSpanIndex =
+            when (lm) {
+                is GridLayoutManager -> lm.spanSizeLookup.getSpanIndex(position, spanCount)
+                else -> position % spanCount
+            }
+    }
+
+    private fun maybeProtectFocusOnChildDetach(detachedChild: View) {
+        if (!installed) return
+        if (!recyclerView.isAttachedToWindow) return
+        if (!config.isEnabled()) return
+
+        val hasPendingLoadMore = pendingFocusAfterLoadMoreAnchorPos != RecyclerView.NO_POSITION
+        if (!hasPendingLoadMore) {
+            // Only guard during active vertical navigation; otherwise background updates should not
+            // steal focus or re-focus content unexpectedly.
+            val now = SystemClock.uptimeMillis()
+            if (now - lastVerticalNavAtMs > focusProtectWindowMs) return
+        }
+
+        val focused = recyclerView.rootView?.findFocus()
+        val focusWasInThisRecycler = focused != null && FocusTreeUtils.isDescendantOf(focused, recyclerView)
+        if (!focusWasInThisRecycler && focused != null) return
+
+        val detachingContainedFocus =
+            focused != null && FocusTreeUtils.isDescendantOf(focused, detachedChild)
+        if (!detachingContainedFocus && focused != null) return
+
+        // Park focus on RecyclerView so the framework won't fall back to an unrelated container
+        // (e.g. the left sidebar) for a brief frame while children are being recycled.
+        parkFocusInRecyclerViewForLoadMore(keepDescendantFocusabilityOverridden = hasPendingLoadMore)
+
+        val token = ++detachFocusRestoreToken
+        recyclerView.postIfAlive(
+            isAlive = { installed && recyclerView.isAttachedToWindow && config.isEnabled() && detachFocusRestoreToken == token },
+        ) {
+            // If a load-more focus jump is queued, keep focus parked until new items are appended.
+            if (pendingFocusAfterLoadMoreAnchorPos != RecyclerView.NO_POSITION) return@postIfAlive
+            restoreFocusAfterDetach()
+        }
+    }
+
+    private fun restoreFocusAfterDetach(): Boolean {
+        val adapter = recyclerView.adapter ?: return false
+        val itemCount = adapter.itemCount
+        if (itemCount <= 0) return false
+
+        val focused = recyclerView.rootView?.findFocus()
+        if (focused != null && focused !== recyclerView && FocusTreeUtils.isDescendantOf(focused, recyclerView)) {
+            return true
+        }
+
+        val firstVisible = firstVisibleAdapterPosition() ?: return false
+        val lastVisible = lastVisibleAdapterPosition() ?: firstVisible
+        if (firstVisible !in 0 until itemCount) return false
+
+        val anchor =
+            pendingFocusAfterLoadMoreAnchorPos
+                .takeIf { it != RecyclerView.NO_POSITION }
+                ?: lastKnownFocusedAdapterPos
+                    .takeIf { it != RecyclerView.NO_POSITION }
+                ?: firstVisible
+        val spanCount = spanCountForLayoutManager()?.coerceAtLeast(1) ?: 1
+        val desired =
+            when (lastVerticalNavDirection) {
+                View.FOCUS_UP -> anchor - spanCount
+                else -> anchor + spanCount
+            }.coerceIn(0, itemCount - 1)
+
+        val candidateInVisibleRange = desired.coerceIn(firstVisible, lastVisible)
+
+        val candidate =
+            when (val lm = recyclerView.layoutManager) {
+                is GridLayoutManager -> {
+                    val targetSpan = lastKnownFocusedSpanIndex
+                    if (targetSpan == null) {
+                        candidateInVisibleRange
+                    } else {
+                        findVisiblePositionWithSpanIndex(
+                            lm = lm,
+                            firstVisible = firstVisible,
+                            lastVisible = lastVisible,
+                            targetSpanIndex = targetSpan,
+                            direction = lastVerticalNavDirection,
+                        ) ?: candidateInVisibleRange
+                    }
+                }
+
+                else -> candidateInVisibleRange
+            }
+
+        return scrollAndFocusAdapterPosition(candidate, smooth = false)
+    }
+
+    private fun lastVisibleAdapterPosition(): Int? {
+        val lm = recyclerView.layoutManager ?: return null
+        val pos =
+            when (lm) {
+                is GridLayoutManager -> lm.findLastVisibleItemPosition()
+                is LinearLayoutManager -> lm.findLastVisibleItemPosition()
+                is StaggeredGridLayoutManager -> {
+                    val spanCount = lm.spanCount.coerceAtLeast(1)
+                    val last = IntArray(spanCount)
+                    lm.findLastVisibleItemPositions(last)
+                    var max = Int.MIN_VALUE
+                    for (p in last) {
+                        if (p != RecyclerView.NO_POSITION && p > max) max = p
+                    }
+                    if (max == Int.MIN_VALUE) RecyclerView.NO_POSITION else max
+                }
+
+                else -> RecyclerView.NO_POSITION
+            }
+        return pos.takeIf { it != RecyclerView.NO_POSITION }
+    }
+
+    private fun findVisiblePositionWithSpanIndex(
+        lm: GridLayoutManager,
+        firstVisible: Int,
+        lastVisible: Int,
+        targetSpanIndex: Int,
+        direction: Int,
+    ): Int? {
+        val spanCount = lm.spanCount.coerceAtLeast(1)
+        val lookup = lm.spanSizeLookup
+        return if (direction == View.FOCUS_UP) {
+            for (pos in lastVisible downTo firstVisible) {
+                if (lookup.getSpanIndex(pos, spanCount) == targetSpanIndex) return pos
+            }
+            null
+        } else {
+            for (pos in firstVisible..lastVisible) {
+                if (lookup.getSpanIndex(pos, spanCount) == targetSpanIndex) return pos
+            }
+            null
+        }
+    }
+
+    private fun resolveAdapterPosition(view: View): Int? {
+        val rootItem = recyclerView.findContainingItemView(view) ?: view
+        val holder = recyclerView.findContainingViewHolder(rootItem) ?: return null
+
+        return (
+            holder.bindingAdapterPosition.takeIf { it != RecyclerView.NO_POSITION }
+                ?: holder.absoluteAdapterPosition.takeIf { it != RecyclerView.NO_POSITION }
+                ?: holder.layoutPosition.takeIf { it != RecyclerView.NO_POSITION }
+                ?: recyclerView.getChildLayoutPosition(rootItem).takeIf { it != RecyclerView.NO_POSITION }
+        )
+    }
+
+    private fun firstVisibleAdapterPosition(): Int? {
+        val lm = recyclerView.layoutManager ?: return null
+        val pos =
+            when (lm) {
+                is GridLayoutManager -> lm.findFirstVisibleItemPosition()
+                is LinearLayoutManager -> lm.findFirstVisibleItemPosition()
+                is StaggeredGridLayoutManager -> {
+                    val spanCount = lm.spanCount.coerceAtLeast(1)
+                    val first = IntArray(spanCount)
+                    lm.findFirstVisibleItemPositions(first)
+                    var min = Int.MAX_VALUE
+                    for (p in first) {
+                        if (p != RecyclerView.NO_POSITION && p < min) min = p
+                    }
+                    if (min == Int.MAX_VALUE) RecyclerView.NO_POSITION else min
+                }
+
+                else -> RecyclerView.NO_POSITION
+            }
+        return pos.takeIf { it != RecyclerView.NO_POSITION }
     }
 
     private fun handleDpadUp(position: Int): Boolean {
@@ -277,10 +599,109 @@ internal class DpadGridController(
 
         if (callbacks.canLoadMore()) {
             pendingFocusAfterLoadMoreAnchorPos = position
+            pendingFocusAfterLoadMoreTargetPos = RecyclerView.NO_POSITION
             callbacks.loadMore()
+            // Freeze focus on RecyclerView until the new page is appended and we can move focus to
+            // the intended "next row" item. This prevents framework fallback focus (e.g. sidebar)
+            // during detach/attach caused by adapter updates.
+            parkFocusInRecyclerViewForLoadMore(keepDescendantFocusabilityOverridden = true)
         }
         // Always consume at the bottom edge to avoid focus escaping to other containers.
         return true
+    }
+
+    private fun handleDpadDownFallback(itemView: View): Boolean {
+        val rootItem = recyclerView.findContainingItemView(itemView) ?: itemView
+        val next = FocusFinder.getInstance().findNextFocus(recyclerView, rootItem, View.FOCUS_DOWN)
+        if (next != null && FocusTreeUtils.isDescendantOf(next, recyclerView)) {
+            next.requestFocus()
+            return true
+        }
+
+        if (recyclerView.canScrollVertically(1)) {
+            val base =
+                rootItem.height
+                    .takeIf { it > 0 }
+                    ?: (recyclerView.height.takeIf { it > 0 }?.div(2) ?: 1)
+            val dy = (base * config.scrollOnDownEdgeFactor).toInt().coerceAtLeast(1)
+            recyclerView.scrollBy(0, dy)
+            recyclerView.postIfAlive(
+                isAlive = { installed && recyclerView.isAttachedToWindow && config.isEnabled() },
+            ) {
+                tryFocusNextDownFromCurrent()
+            }
+            return true
+        }
+
+        if (callbacks.canLoadMore()) {
+            val adapter = recyclerView.adapter
+            val itemCount = adapter?.itemCount ?: 0
+            val fallbackAnchor =
+                when {
+                    lastKnownFocusedAdapterPos in 0 until itemCount -> lastKnownFocusedAdapterPos
+                    (lastVisibleAdapterPosition() ?: RecyclerView.NO_POSITION) in 0 until itemCount -> lastVisibleAdapterPosition()!!
+                    (firstVisibleAdapterPosition() ?: RecyclerView.NO_POSITION) in 0 until itemCount -> firstVisibleAdapterPosition()!!
+                    itemCount > 0 -> itemCount - 1
+                    else -> RecyclerView.NO_POSITION
+                }
+            if (fallbackAnchor != RecyclerView.NO_POSITION) {
+                pendingFocusAfterLoadMoreAnchorPos = fallbackAnchor
+                pendingFocusAfterLoadMoreTargetPos = RecyclerView.NO_POSITION
+            }
+            callbacks.loadMore()
+            // The focused child can be transiently detached/rebound while data is being appended.
+            // Parking focus on RecyclerView avoids a framework-level fallback focus target.
+            parkFocusInRecyclerViewForLoadMore(keepDescendantFocusabilityOverridden = true)
+        }
+        // Always consume: the whole purpose of this fallback is preventing outflow to other containers.
+        return true
+    }
+
+    private fun parkFocusInRecyclerViewForLoadMore(keepDescendantFocusabilityOverridden: Boolean = false) {
+        if (!installed) return
+        if (!recyclerView.isAttachedToWindow) return
+        if (!config.isEnabled()) return
+
+        // Only park focus when focus is already inside this RecyclerView (or null).
+        // This controller should never steal focus from other containers (e.g. the sidebar).
+        val focused = recyclerView.rootView?.findFocus()
+        if (focused != null && focused !== recyclerView && !FocusTreeUtils.isDescendantOf(focused, recyclerView)) {
+            return
+        }
+
+        if (focusParkedDescendantFocusability == null) {
+            // Temporarily prefer focusing the RecyclerView itself over its descendants, so
+            // requestFocus() doesn't immediately land back on a child that might be recycled.
+            focusParkedDescendantFocusability = recyclerView.descendantFocusability
+            recyclerView.descendantFocusability = ViewGroup.FOCUS_BEFORE_DESCENDANTS
+        }
+
+        if (recyclerView.isFocused || recyclerView.requestFocus()) {
+            if (!keepDescendantFocusabilityOverridden) {
+                // Once focus is captured, immediately restore the original descendantFocusability.
+                // Keeping it overridden can affect how focus enters this RecyclerView later (e.g. from tab → grid).
+                unparkFocusInRecyclerViewIfNeeded()
+            }
+            return
+        }
+
+        // If requestFocus() fails (timing/layout), retry next frame while the override is active.
+        recyclerView.postIfAlive(
+            isAlive = { installed && recyclerView.isAttachedToWindow && config.isEnabled() },
+        ) {
+            if (!recyclerView.isFocused) {
+                recyclerView.requestFocus()
+            }
+            if (!keepDescendantFocusabilityOverridden) {
+                unparkFocusInRecyclerViewIfNeeded()
+            }
+        }
+    }
+
+    private fun unparkFocusInRecyclerViewIfNeeded() {
+        val original = focusParkedDescendantFocusability ?: return
+        focusParkedDescendantFocusability = null
+        recyclerView.descendantFocusability = original
     }
 
     private fun tryFocusNextDownFromCurrent(): Boolean {
@@ -304,42 +725,76 @@ internal class DpadGridController(
         return scrollAndFocusAdapterPosition(position, smooth = true)
     }
 
-    private fun scrollAndFocusAdapterPosition(position: Int, smooth: Boolean): Boolean {
-        val adapter = recyclerView.adapter ?: return false
+    private fun scrollAndFocusAdapterPosition(position: Int, smooth: Boolean, onFocused: (() -> Unit)? = null): Boolean {
+        val adapter = recyclerView.adapter
+        if (adapter == null) {
+            maybeAbortPendingLoadMoreFocusRetry(position)
+            return false
+        }
         val itemCount = adapter.itemCount
-        if (position !in 0 until itemCount) return false
+        if (position !in 0 until itemCount) {
+            maybeAbortPendingLoadMoreFocusRetry(position)
+            return false
+        }
 
         recyclerView.findViewHolderForAdapterPosition(position)?.itemView?.let { itemView ->
             // Avoid requesting focus while the target view is completely off-screen.
             // RecyclerView will "jump" to make the focused view visible, which looks like a flash.
-            if (isPartiallyVisibleInRecycler(itemView) && itemView.requestFocus()) return true
+            if (isPartiallyVisibleInRecycler(itemView) && itemView.requestFocus()) {
+                onFocused?.invoke()
+                return true
+            }
         }
 
         if (smooth) recyclerView.smoothScrollToPosition(position) else recyclerView.scrollToPosition(position)
-        retryFocusAdapterPosition(position, attemptsLeft = focusRetryMaxAttempts)
+        retryFocusAdapterPosition(position, attemptsLeft = focusRetryMaxAttempts, onFocused = onFocused)
         return true
     }
 
-    private fun retryFocusAdapterPosition(position: Int, attemptsLeft: Int) {
-        if (!isAliveForFocusJump()) return
+    private fun retryFocusAdapterPosition(position: Int, attemptsLeft: Int, onFocused: (() -> Unit)? = null) {
+        if (!isAliveForFocusJump()) {
+            maybeAbortPendingLoadMoreFocusRetry(position)
+            return
+        }
 
-        val adapter = recyclerView.adapter ?: return
+        val adapter = recyclerView.adapter
+        if (adapter == null) {
+            maybeAbortPendingLoadMoreFocusRetry(position)
+            return
+        }
         val itemCount = adapter.itemCount
-        if (position !in 0 until itemCount) return
+        if (position !in 0 until itemCount) {
+            maybeAbortPendingLoadMoreFocusRetry(position)
+            return
+        }
 
         recyclerView.findViewHolderForAdapterPosition(position)?.itemView?.let { itemView ->
             // Only request focus once the target is at least partially visible, otherwise RecyclerView
             // may perform an immediate scroll-to-visible (no smooth animation) which looks like a flash.
-            if (isPartiallyVisibleInRecycler(itemView) && itemView.requestFocus()) return
+            if (isPartiallyVisibleInRecycler(itemView) && itemView.requestFocus()) {
+                onFocused?.invoke()
+                return
+            }
         }
 
-        if (attemptsLeft <= 0) return
+        if (attemptsLeft <= 0) {
+            maybeAbortPendingLoadMoreFocusRetry(position)
+            return
+        }
         recyclerView.postDelayedIfAlive(
             delayMillis = focusRetryDelayMillis,
             isAlive = { isAliveForFocusJump() },
         ) {
-            retryFocusAdapterPosition(position, attemptsLeft = attemptsLeft - 1)
+            retryFocusAdapterPosition(position, attemptsLeft = attemptsLeft - 1, onFocused = onFocused)
         }
+    }
+
+    private fun maybeAbortPendingLoadMoreFocusRetry(position: Int) {
+        if (pendingFocusAfterLoadMoreTargetPos != position) return
+        if (pendingFocusAfterLoadMoreAnchorPos == RecyclerView.NO_POSITION) return
+        // Give up the queued load-more focus jump: restore normal focusability so users can keep
+        // navigating even if the target view never becomes focusable/visible.
+        clearPendingFocusAfterLoadMore()
     }
 
     private fun isAliveForFocusJump(): Boolean {

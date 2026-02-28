@@ -149,6 +149,17 @@ internal class PopupHost private constructor(
     ): PopupHandle {
         checkMainThread()
 
+        // When a modal triggers another modal (i.e. we replace the currently visible modal),
+        // preserve the original FocusReturn target so the final dismiss restores focus back to
+        // where the user was before the whole modal flow started.
+        val inheritedFocusReturn = modalEntry?.focusReturn
+        if (inheritedFocusReturn != null) {
+            // Disable the focus trap before moving focus out of the old modal.
+            modalEntry?.dismissing = true
+            // While the old modal is being removed, keep focus on a stable view to prevent a
+            // system-level fallback focus target (e.g. a top bar Back button) for a brief frame.
+            parkFocusForRestore()
+        }
         dismissModalInternal(animate = false, restoreFocus = false)
 
         val dialogContext = activity.userScaledContext()
@@ -189,8 +200,9 @@ internal class PopupHost private constructor(
         card.isClickable = true
         card.setOnClickListener { /* consume */ }
 
-        val focusReturn = FocusReturn()
-        focusReturn.capture(activity.window?.decorView?.findFocus())
+        val focusReturn =
+            inheritedFocusReturn
+                ?: FocusReturn().also { it.capture(activity.window?.decorView?.findFocus()) }
 
         val backCallback =
             object : OnBackPressedCallback(true) {

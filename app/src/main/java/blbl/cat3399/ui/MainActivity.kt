@@ -9,6 +9,7 @@ import android.view.ViewGroup
 import android.view.ViewGroup.MarginLayoutParams
 import android.view.ViewTreeObserver
 import androidx.activity.OnBackPressedCallback
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
@@ -56,6 +57,7 @@ class MainActivity : BaseActivity(), SidebarFocusHost {
     private lateinit var navAdapter: SidebarNavAdapter
     private var needForceInitialSidebarFocus: Boolean = false
     private var launchNavId: Int = SidebarNavAdapter.ID_HOME
+    private var currentRootNavId: Int? = null
     private var lastMainFocusedView: WeakReference<View>? = null
     private var pausedFocusedView: WeakReference<View>? = null
     private var pausedFocusWasInMain: Boolean = false
@@ -66,6 +68,17 @@ class MainActivity : BaseActivity(), SidebarFocusHost {
     private val userInfoReturnFocus = FocusReturn()
     private var userInfoLoadJob: Job? = null
     private var lastBackAtMs: Long = 0L
+    private var lastMainFocusAtMs: Long = 0L
+
+    private data class FocusabilitySnapshot(
+        val descendantFocusability: Int,
+        val isFocusable: Boolean,
+        val isFocusableInTouchMode: Boolean,
+    )
+
+    private var dpadDownFocusGuardActive: Boolean = false
+    private var dpadDownFocusGuardReleaseToken: Int = 0
+    private val dpadDownFocusGuardSnapshots = java.util.WeakHashMap<ViewGroup, FocusabilitySnapshot>()
 
     private var baseUserInfoCardWidth: Int? = null
 
@@ -90,18 +103,19 @@ class MainActivity : BaseActivity(), SidebarFocusHost {
         }
         binding.btnSidebarSettings.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
 
+        val initialSelectedNavId =
+            if (savedInstanceState == null) {
+                launchNavId
+            } else {
+                savedInstanceState.getInt(STATE_KEY_ROOT_NAV_ID, -1).takeIf { isValidRootNavId(it) }
+                    ?: inferCurrentRootNavIdFromFragments()
+                    ?: launchNavId
+            }
+
         navAdapter = SidebarNavAdapter(
             onClick = { item ->
                 AppLog.d("Nav", "sidebar click id=${item.id} title=${item.title} t=${SystemClock.uptimeMillis()}")
-                when (item.id) {
-                    SidebarNavAdapter.ID_SEARCH -> showRoot(SearchFragment.newInstance())
-                    SidebarNavAdapter.ID_HOME -> showRoot(HomeFragment.newInstance())
-                    SidebarNavAdapter.ID_CATEGORY -> showRoot(CategoryFragment.newInstance())
-                    SidebarNavAdapter.ID_DYNAMIC -> showRoot(DynamicFragment.newInstance())
-                    SidebarNavAdapter.ID_LIVE -> showRoot(LiveFragment.newInstance())
-                    SidebarNavAdapter.ID_MY -> showRoot(MyFragment.newInstance())
-                    else -> false
-                }
+                handleSidebarNavClick(item.id)
             },
         )
         binding.recyclerSidebar.layoutManager = LinearLayoutManager(this)
@@ -116,17 +130,20 @@ class MainActivity : BaseActivity(), SidebarFocusHost {
                 SidebarNavAdapter.NavItem(SidebarNavAdapter.ID_LIVE, getString(R.string.tab_live), R.drawable.ic_nav_live),
                 SidebarNavAdapter.NavItem(SidebarNavAdapter.ID_MY, getString(R.string.tab_my), R.drawable.ic_nav_my),
             ),
-            selectedId = launchNavId,
+            selectedId = initialSelectedNavId,
         )
 
         if (savedInstanceState == null) {
-            navAdapter.select(launchNavId, trigger = true)
+            navAdapter.select(initialSelectedNavId, trigger = true)
+        } else {
+            restoreRootAfterRecreate(initialSelectedNavId)
         }
 
         focusListener =
             ViewTreeObserver.OnGlobalFocusChangeListener { _, newFocus ->
                 if (newFocus != null && isInMainContainer(newFocus)) {
                     lastMainFocusedView = WeakReference(newFocus)
+                    lastMainFocusAtMs = SystemClock.uptimeMillis()
                 }
             }.also { binding.root.viewTreeObserver.addOnGlobalFocusChangeListener(it) }
 
@@ -149,7 +166,7 @@ class MainActivity : BaseActivity(), SidebarFocusHost {
                         if (shouldFinishOnBackPress()) finish()
                         return
                     }
-                    val current = supportFragmentManager.findFragmentById(R.id.main_container)
+                    val current = currentRootFragment()
                     val handled = (current as? BackPressHandler)?.handleBackPressed() == true
                     AppLog.d("Back", "back current=${current?.javaClass?.simpleName} handled=$handled")
                     if (handled) return
@@ -200,7 +217,13 @@ class MainActivity : BaseActivity(), SidebarFocusHost {
         val focused = currentFocus
         pausedFocusedView = focused?.let { WeakReference(it) }
         pausedFocusWasInMain = focused != null && isInMainContainer(focused)
+        releaseDpadDownFocusGuard()
         super.onPause()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        currentRootNavId?.let { outState.putInt(STATE_KEY_ROOT_NAV_ID, it) }
     }
 
     override fun onDestroy() {
@@ -214,10 +237,93 @@ class MainActivity : BaseActivity(), SidebarFocusHost {
         if (hasFocus) Immersive.apply(this, BiliClient.prefs.fullscreenEnabled)
     }
 
+    private fun shouldStartDpadDownFocusGuard(focused: View?): Boolean {
+        if (isUserInfoOverlayVisible()) return false
+        if (focused != null) {
+            if (isInSidebar(focused)) return false
+            return isInMainContainer(focused)
+        }
+        val now = SystemClock.uptimeMillis()
+        return now - lastMainFocusAtMs <= 1_000L
+    }
+
+    private fun snapshotAndBlockFocus(container: ViewGroup) {
+        if (!dpadDownFocusGuardSnapshots.containsKey(container)) {
+            dpadDownFocusGuardSnapshots[container] =
+                FocusabilitySnapshot(
+                    descendantFocusability = container.descendantFocusability,
+                    isFocusable = container.isFocusable,
+                    isFocusableInTouchMode = container.isFocusableInTouchMode,
+                )
+        }
+        container.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        container.isFocusable = false
+        container.isFocusableInTouchMode = false
+    }
+
+    private fun beginOrKeepDpadDownFocusGuard(focused: View?) {
+        if (!shouldStartDpadDownFocusGuard(focused)) return
+        dpadDownFocusGuardActive = true
+        dpadDownFocusGuardReleaseToken++
+
+        // Always block the left sidebar: it should only be entered explicitly (DPAD_LEFT),
+        // never as a framework fallback when content is temporarily detached/rebound.
+        snapshotAndBlockFocus(binding.sidebar)
+
+        val rootView = currentRootFragment()?.view
+        val tabLayout = rootView?.findViewById<ViewGroup?>(R.id.tab_layout)
+        if (tabLayout != null && (focused == null || !FocusTreeUtils.isDescendantOf(focused, tabLayout))) {
+            snapshotAndBlockFocus(tabLayout)
+        }
+
+        val recyclerFollowing = rootView?.findViewById<ViewGroup?>(R.id.recycler_following)
+        if (recyclerFollowing != null && (focused == null || !FocusTreeUtils.isDescendantOf(focused, recyclerFollowing))) {
+            snapshotAndBlockFocus(recyclerFollowing)
+        }
+    }
+
+    private fun scheduleReleaseDpadDownFocusGuard() {
+        if (!dpadDownFocusGuardActive) return
+        val token = ++dpadDownFocusGuardReleaseToken
+        binding.root.postDelayed(
+            {
+                if (!dpadDownFocusGuardActive) return@postDelayed
+                if (dpadDownFocusGuardReleaseToken != token) return@postDelayed
+                releaseDpadDownFocusGuard()
+            },
+            120L,
+        )
+    }
+
+    private fun releaseDpadDownFocusGuard() {
+        if (!dpadDownFocusGuardActive) return
+        dpadDownFocusGuardActive = false
+        val snapshots = dpadDownFocusGuardSnapshots.toMap()
+        dpadDownFocusGuardSnapshots.clear()
+        snapshots.forEach { (container, snap) ->
+            container.descendantFocusability = snap.descendantFocusability
+            container.isFocusable = snap.isFocusable
+            container.isFocusableInTouchMode = snap.isFocusableInTouchMode
+        }
+    }
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (isUserInfoOverlayVisible()) {
             return super.dispatchKeyEvent(event)
         }
+
+        if (event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+            when (event.action) {
+                KeyEvent.ACTION_DOWN -> beginOrKeepDpadDownFocusGuard(currentFocus)
+                KeyEvent.ACTION_UP,
+                -> scheduleReleaseDpadDownFocusGuard()
+            }
+        } else if (event.action == KeyEvent.ACTION_DOWN && dpadDownFocusGuardActive) {
+            // The user pressed another key: stop guarding so normal navigation (e.g. DPAD_LEFT into
+            // sidebar, DPAD_LEFT into Dynamic follow list) is not blocked.
+            releaseDpadDownFocusGuard()
+        }
+
         if (event.action == KeyEvent.ACTION_DOWN) {
             if (event.repeatCount == 0 && RemoteKeys.isRefreshKey(event.keyCode)) {
                 if (dispatchRefreshKeyToCurrentPage()) return true
@@ -225,6 +331,14 @@ class MainActivity : BaseActivity(), SidebarFocusHost {
 
             val focused = currentFocus
             if (focused == null && isNavKey(event.keyCode)) {
+                // During adapter updates, focus can be temporarily lost. If we were in main very
+                // recently, keep the event consumed (and keep focus-escape guards active) instead
+                // of forcing focus back into sidebar.
+                val now = SystemClock.uptimeMillis()
+                if (now - lastMainFocusAtMs <= 1_000L) {
+                    return true
+                }
+                if (event.repeatCount > 0) return true
                 ensureInitialFocus()
                 return true
             }
@@ -240,6 +354,7 @@ class MainActivity : BaseActivity(), SidebarFocusHost {
                             return super.dispatchKeyEvent(event)
                         }
                         if (canEnterSidebarFrom(focused)) {
+                            releaseDpadDownFocusGuard()
                             focusSidebarSelectedNav()
                             return true
                         }
@@ -267,7 +382,7 @@ class MainActivity : BaseActivity(), SidebarFocusHost {
     }
 
     private fun dispatchRefreshKeyToCurrentPage(): Boolean {
-        val root = supportFragmentManager.findFragmentById(R.id.main_container) ?: return false
+        val root = currentRootFragment() ?: return false
         val handler = findRefreshKeyHandler(root) ?: return false
         return handler.handleRefreshKey()
     }
@@ -467,13 +582,152 @@ class MainActivity : BaseActivity(), SidebarFocusHost {
         }
     }
 
-    private fun showRoot(fragment: androidx.fragment.app.Fragment): Boolean {
-        AppLog.d("MainActivity", "showRoot ${fragment.javaClass.simpleName} t=${SystemClock.uptimeMillis()}")
-        runCatching { supportFragmentManager.popBackStackImmediate(null, FragmentManager.POP_BACK_STACK_INCLUSIVE) }
-        supportFragmentManager.beginTransaction()
-            .replace(R.id.main_container, fragment)
-            .commitAllowingStateLoss()
+    private fun handleSidebarNavClick(navId: Int): Boolean {
+        if (!isValidRootNavId(navId)) return false
+        val current = currentRootNavId
+        if (current != null && current == navId) {
+            // Reselect: force refresh the current (visible) tab content.
+            dispatchRefreshKeyToCurrentPage()
+            return true
+        }
+        return switchRoot(navId, clearBackStack = true)
+    }
+
+    private fun restoreRootAfterRecreate(initialSelectedNavId: Int) {
+        if (!isValidRootNavId(initialSelectedNavId)) return
+
+        // If we have cached (tagged) roots, ensure only the selected one is visible/resumed.
+        if (hasAnyTaggedRootFragments()) {
+            switchRoot(initialSelectedNavId, clearBackStack = false)
+            return
+        }
+
+        // Legacy restore path (before root caching existed): keep the restored fragment as-is.
+        val current = supportFragmentManager.findFragmentById(R.id.main_container)
+        currentRootNavId = navIdForRootFragment(current)
+        if (current == null) {
+            switchRoot(initialSelectedNavId, clearBackStack = false)
+        }
+    }
+
+    private fun switchRoot(navId: Int, clearBackStack: Boolean): Boolean {
+        if (!isValidRootNavId(navId)) return false
+
+        AppLog.d("MainActivity", "switchRoot navId=$navId clearBackStack=$clearBackStack t=${SystemClock.uptimeMillis()}")
+        val fm = supportFragmentManager
+        if (clearBackStack) {
+            runCatching { fm.popBackStackImmediate(null, FragmentManager.POP_BACK_STACK_INCLUSIVE) }
+        }
+
+        val targetTag = rootTagFor(navId)
+        var target = fm.findFragmentByTag(targetTag)
+        val tx = fm.beginTransaction().setReorderingAllowed(true)
+
+        if (target == null) {
+            target = createRootFragment(navId)
+            tx.add(R.id.main_container, target, targetTag)
+        }
+
+        // Keep cached roots, but remove unrelated fragments when switching roots
+        // (equivalent to the old replace() behavior).
+        fm.fragments
+            .filter { it.isAdded && it.id == R.id.main_container && it !== target }
+            .forEach { other ->
+                val isCachedRoot = other.tag?.startsWith(ROOT_TAG_PREFIX) == true
+                if (!clearBackStack || isCachedRoot) {
+                    tx.hide(other)
+                    tx.setMaxLifecycle(other, Lifecycle.State.STARTED)
+                } else {
+                    tx.remove(other)
+                }
+            }
+
+        if (target.isHidden) {
+            tx.show(target)
+        }
+        tx.setMaxLifecycle(target, Lifecycle.State.RESUMED)
+        tx.setPrimaryNavigationFragment(target)
+        tx.commitAllowingStateLoss()
+
+        currentRootNavId = navId
         return true
+    }
+
+    private fun currentRootFragment(): Fragment? {
+        val fm = supportFragmentManager
+        val id = currentRootNavId
+        if (id != null) {
+            fm.findFragmentByTag(rootTagFor(id))?.let { return it }
+        }
+        fm.primaryNavigationFragment?.let { return it }
+        return fm.findFragmentById(R.id.main_container)
+    }
+
+    private fun inferCurrentRootNavIdFromFragments(): Int? {
+        val fm = supportFragmentManager
+        navIdForRootFragment(fm.primaryNavigationFragment)?.let { return it }
+
+        ROOT_NAV_IDS.forEach { navId ->
+            val fragment = fm.findFragmentByTag(rootTagFor(navId)) ?: return@forEach
+            if (fragment.isAdded && !fragment.isHidden) return navId
+        }
+
+        return navIdForRootFragment(fm.findFragmentById(R.id.main_container))
+    }
+
+    private fun hasAnyTaggedRootFragments(): Boolean {
+        val fm = supportFragmentManager
+        return ROOT_NAV_IDS.any { fm.findFragmentByTag(rootTagFor(it)) != null }
+    }
+
+    private fun createRootFragment(navId: Int): Fragment {
+        return when (navId) {
+            SidebarNavAdapter.ID_SEARCH -> SearchFragment.newInstance()
+            SidebarNavAdapter.ID_HOME -> HomeFragment.newInstance()
+            SidebarNavAdapter.ID_CATEGORY -> CategoryFragment.newInstance()
+            SidebarNavAdapter.ID_DYNAMIC -> DynamicFragment.newInstance()
+            SidebarNavAdapter.ID_LIVE -> LiveFragment.newInstance()
+            SidebarNavAdapter.ID_MY -> MyFragment.newInstance()
+            else -> throw IllegalArgumentException("Unknown root navId=$navId")
+        }
+    }
+
+    private fun rootTagFor(navId: Int): String {
+        return when (navId) {
+            SidebarNavAdapter.ID_SEARCH -> "${ROOT_TAG_PREFIX}search"
+            SidebarNavAdapter.ID_HOME -> "${ROOT_TAG_PREFIX}home"
+            SidebarNavAdapter.ID_CATEGORY -> "${ROOT_TAG_PREFIX}category"
+            SidebarNavAdapter.ID_DYNAMIC -> "${ROOT_TAG_PREFIX}dynamic"
+            SidebarNavAdapter.ID_LIVE -> "${ROOT_TAG_PREFIX}live"
+            SidebarNavAdapter.ID_MY -> "${ROOT_TAG_PREFIX}my"
+            else -> throw IllegalArgumentException("Unknown root navId=$navId")
+        }
+    }
+
+    private fun navIdForRootFragment(fragment: Fragment?): Int? {
+        return when (fragment) {
+            is SearchFragment -> SidebarNavAdapter.ID_SEARCH
+            is HomeFragment -> SidebarNavAdapter.ID_HOME
+            is CategoryFragment -> SidebarNavAdapter.ID_CATEGORY
+            is DynamicFragment -> SidebarNavAdapter.ID_DYNAMIC
+            is LiveFragment -> SidebarNavAdapter.ID_LIVE
+            is MyFragment -> SidebarNavAdapter.ID_MY
+            else -> null
+        }
+    }
+
+    private fun isValidRootNavId(id: Int): Boolean {
+        return when (id) {
+            SidebarNavAdapter.ID_SEARCH,
+            SidebarNavAdapter.ID_HOME,
+            SidebarNavAdapter.ID_CATEGORY,
+            SidebarNavAdapter.ID_DYNAMIC,
+            SidebarNavAdapter.ID_LIVE,
+            SidebarNavAdapter.ID_MY,
+            -> true
+
+            else -> false
+        }
     }
 
     private fun openQrLogin() {
@@ -573,6 +827,7 @@ class MainActivity : BaseActivity(), SidebarFocusHost {
         if (currentFocus != null) return
         val pos = navAdapter.selectedAdapterPosition().takeIf { it >= 0 } ?: 0
         binding.recyclerSidebar.post {
+            if (currentFocus != null) return@post
             val vh = binding.recyclerSidebar.findViewHolderForAdapterPosition(pos)
             if (vh != null) {
                 vh.itemView.requestFocus()
@@ -580,7 +835,9 @@ class MainActivity : BaseActivity(), SidebarFocusHost {
             }
             binding.recyclerSidebar.scrollToPosition(pos)
             binding.recyclerSidebar.post {
-                binding.recyclerSidebar.findViewHolderForAdapterPosition(pos)?.itemView?.requestFocus()
+                if (currentFocus == null) {
+                    binding.recyclerSidebar.findViewHolderForAdapterPosition(pos)?.itemView?.requestFocus()
+                }
             }
         }
     }
@@ -653,7 +910,7 @@ class MainActivity : BaseActivity(), SidebarFocusHost {
     }
 
     private fun focusMainFromSidebar(): Boolean {
-        val rootFragment = supportFragmentManager.findFragmentById(R.id.main_container) ?: return false
+        val rootFragment = currentRootFragment() ?: return false
         val fragmentView = rootFragment.view ?: return false
 
         val recyclerFollowing = fragmentView.findViewById<RecyclerView?>(R.id.recycler_following)
@@ -762,7 +1019,7 @@ class MainActivity : BaseActivity(), SidebarFocusHost {
     }
 
     private fun focusSelectedTabInCurrentFragment(): Boolean {
-        val fragmentView = supportFragmentManager.findFragmentById(R.id.main_container)?.view ?: return false
+        val fragmentView = currentRootFragment()?.view ?: return false
         val tabLayout = fragmentView.findViewById<com.google.android.material.tabs.TabLayout?>(R.id.tab_layout) ?: return false
         val tabStrip = tabLayout.getChildAt(0) as? ViewGroup ?: return false
         val pos = tabLayout.selectedTabPosition.takeIf { it >= 0 } ?: 0
@@ -771,7 +1028,7 @@ class MainActivity : BaseActivity(), SidebarFocusHost {
     }
 
     private fun tryMoveDynamicVideoToFollowing(focused: View): Boolean {
-        val fragmentView = supportFragmentManager.findFragmentById(R.id.main_container)?.view ?: return false
+        val fragmentView = currentRootFragment()?.view ?: return false
         val recyclerFollowing = fragmentView.findViewById<RecyclerView?>(R.id.recycler_following) ?: return false
         val recyclerDynamic = fragmentView.findViewById<RecyclerView?>(R.id.recycler_dynamic) ?: return false
         if (!FocusTreeUtils.isDescendantOf(focused, recyclerDynamic)) return false
@@ -907,6 +1164,17 @@ class MainActivity : BaseActivity(), SidebarFocusHost {
     }
 
     companion object {
+        private const val ROOT_TAG_PREFIX = "main_root_"
+        private const val STATE_KEY_ROOT_NAV_ID = "MainActivity.rootNavId"
+        private val ROOT_NAV_IDS =
+            intArrayOf(
+                SidebarNavAdapter.ID_SEARCH,
+                SidebarNavAdapter.ID_HOME,
+                SidebarNavAdapter.ID_CATEGORY,
+                SidebarNavAdapter.ID_DYNAMIC,
+                SidebarNavAdapter.ID_LIVE,
+                SidebarNavAdapter.ID_MY,
+            )
         private const val BACK_DOUBLE_PRESS_WINDOW_MS = 1_500L
     }
 }
