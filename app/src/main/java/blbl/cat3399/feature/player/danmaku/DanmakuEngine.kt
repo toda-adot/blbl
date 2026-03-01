@@ -15,6 +15,7 @@ import blbl.cat3399.feature.player.danmaku.model.DanmakuEmoteSegment
 import blbl.cat3399.feature.player.danmaku.model.DanmakuKind
 import blbl.cat3399.feature.player.danmaku.model.RenderSnapshot
 import java.util.Arrays
+import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -273,18 +274,28 @@ internal class DanmakuEngine(
 
         fun trySpawnScroll(item: DanmakuItem, textWidth: Float): Boolean {
             if (item.data.text.isBlank()) return true
-            val pxNew = (width + textWidth) / rollingDurationMs.toFloat()
+            val distancePx = (width.toFloat() + textWidth).coerceAtLeast(0f)
+            val rawPx = distancePx / rollingDurationMs.toFloat()
+            val shortPx = width.toFloat() / rollingDurationMs.toFloat()
+            val maxPx = shortPx * MAX_LONG_SCROLL_SPEED_RATIO
+            val pxNew = min(rawPx, maxPx)
+            val durationMs =
+                computeScrollDurationMs(
+                    distancePx = distancePx,
+                    pxPerMs = pxNew,
+                    fallbackDurationMs = rollingDurationMs,
+                )
             for (lane in 0 until laneCount) {
                 val prev = laneLastScroll[lane]
                 if (prev == null) {
-                    activate(item, DanmakuKind.SCROLL, lane, textWidth, pxNew, rollingDurationMs, startTimeMs = nowMs)
+                    activate(item, DanmakuKind.SCROLL, lane, textWidth, pxNew, durationMs, startTimeMs = nowMs)
                     laneLastScroll[lane] = item
                     laneLastScrollTail[lane] = width.toFloat() + textWidth
                     return true
                 }
                 val tailPrev = laneLastScrollTail[lane]
                 if (isScrollLaneAvailable(width.toFloat(), nowMs, prev, tailPrev, pxNew, marginPx)) {
-                    activate(item, DanmakuKind.SCROLL, lane, textWidth, pxNew, rollingDurationMs, startTimeMs = nowMs)
+                    activate(item, DanmakuKind.SCROLL, lane, textWidth, pxNew, durationMs, startTimeMs = nowMs)
                     laneLastScroll[lane] = item
                     laneLastScrollTail[lane] = width.toFloat() + textWidth
                     return true
@@ -715,6 +726,14 @@ internal class DanmakuEngine(
         active.add(item)
     }
 
+    private fun computeScrollDurationMs(distancePx: Float, pxPerMs: Float, fallbackDurationMs: Int): Int {
+        val safeFallback = fallbackDurationMs.coerceAtLeast(1)
+        if (!distancePx.isFinite() || distancePx <= 0f) return safeFallback
+        if (!pxPerMs.isFinite() || pxPerMs <= 0f) return safeFallback
+        val travel = ceil((distancePx / pxPerMs).toDouble()).toLong().coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
+        return max(safeFallback, travel)
+    }
+
     private fun skipOld(nowMs: Int, rollingDurationMs: Int) {
         val ignoreBefore = nowMs - rollingDurationMs
         while (index < items.size && items[index].timeMs() < ignoreBefore) {
@@ -929,6 +948,7 @@ internal class DanmakuEngine(
         private const val MAX_ROLLING_DURATION_MS = 20_000
 
         private const val FIXED_DURATION_MS = 4_000
+        private const val MAX_LONG_SCROLL_SPEED_RATIO = 1.5f
 
         private const val DELAY_STEP_MS = 220
         private const val MAX_DELAY_MS = 1_600
