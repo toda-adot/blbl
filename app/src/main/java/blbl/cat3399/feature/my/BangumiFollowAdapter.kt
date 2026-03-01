@@ -58,7 +58,9 @@ class BangumiFollowAdapter(
         fun bind(item: BangumiSeason, onClick: (position: Int, season: BangumiSeason) -> Unit) {
             binding.tvTitle.text = item.title
 
-            val badgeText = pgcAccessBadgeTextOf(item.badgeEp, item.badge)
+            val badgeText =
+                pgcAccessBadgeTextOf(item.badgeEp, item.badge)
+                    ?: item.badge?.trim()?.takeIf { it.isNotBlank() }
             binding.tvAccessBadgeText.isVisible = badgeText != null
             binding.tvAccessBadgeText.text = badgeText.orEmpty()
 

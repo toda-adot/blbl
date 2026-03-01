@@ -39,6 +39,7 @@ class VideoDetailHeaderAdapter(
     private var metaText: String? = null
     private var desc: String? = null
     private var coverUrl: String? = null
+    private var accessBadgeText: String? = null
     private var usePosterCover: Boolean = false
     private var upName: String? = null
     private var upAvatar: String? = null
@@ -97,6 +98,7 @@ class VideoDetailHeaderAdapter(
         metaText: String?,
         desc: String?,
         coverUrl: String?,
+        accessBadgeText: String? = null,
         usePosterCover: Boolean,
         upName: String?,
         upAvatar: String?,
@@ -126,6 +128,7 @@ class VideoDetailHeaderAdapter(
         this.metaText = metaText
         this.desc = desc
         this.coverUrl = coverUrl
+        this.accessBadgeText = accessBadgeText
         this.usePosterCover = usePosterCover
         this.upName = upName
         this.upAvatar = upAvatar
@@ -190,6 +193,7 @@ class VideoDetailHeaderAdapter(
             metaText = metaText,
             desc = desc,
             coverUrl = coverUrl,
+            accessBadgeText = accessBadgeText,
             usePosterCover = usePosterCover,
             upName = upName,
             upAvatar = upAvatar,
@@ -315,6 +319,7 @@ class VideoDetailHeaderAdapter(
             metaText: String?,
             desc: String?,
             coverUrl: String?,
+            accessBadgeText: String?,
             usePosterCover: Boolean,
             upName: String?,
             upAvatar: String?,
@@ -364,6 +369,10 @@ class VideoDetailHeaderAdapter(
                 binding.ivCover.setImageDrawable(null)
                 binding.ivCoverPoster.setImageDrawable(null)
             }
+
+            val safeAccessBadgeText = accessBadgeText?.trim().takeIf { !it.isNullOrBlank() }
+            binding.tvAccessBadgeText.isVisible = safeAccessBadgeText != null
+            binding.tvAccessBadgeText.text = safeAccessBadgeText.orEmpty()
 
             val safeUpName = upName?.trim().takeIf { !it.isNullOrBlank() }
             binding.cardUp.isVisible = safeUpName != null

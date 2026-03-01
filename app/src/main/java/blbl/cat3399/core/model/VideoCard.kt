@@ -20,6 +20,8 @@ data class VideoCard(
     val isChargingArc: Boolean = false,
     // Optional overlay text rendered on the cover (bottom-left). Used by PGC episode cards.
     val coverLeftBottomText: String? = null,
+    // Optional access badge rendered on the cover (top-right). Used by PGC ("大会员"/"限免"/"付费") etc.
+    val accessBadgeText: String? = null,
 ) {
     fun stableKey(): String =
         when {

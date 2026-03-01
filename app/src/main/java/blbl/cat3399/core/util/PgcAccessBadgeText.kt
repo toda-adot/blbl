@@ -6,7 +6,7 @@ package blbl.cat3399.core.util
  * We rely on text badges (e.g. "会员", "会员专享", "限免", "付费") because different endpoints
  * may expose different fields; callers can pass multiple raw badge strings.
  */
-fun pgcAccessBadgeTextOf(vararg rawBadges: String?): String? {
+fun pgcAccessBadgeTextOf(rawBadges: Iterable<String?>): String? {
     val badges = rawBadges.mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
     if (badges.isEmpty()) return null
 
@@ -20,3 +20,4 @@ fun pgcAccessBadgeTextOf(vararg rawBadges: String?): String? {
     }
 }
 
+fun pgcAccessBadgeTextOf(vararg rawBadges: String?): String? = pgcAccessBadgeTextOf(rawBadges.asIterable())

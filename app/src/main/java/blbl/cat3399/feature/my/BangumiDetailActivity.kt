@@ -24,6 +24,7 @@ import blbl.cat3399.core.ui.ThemeColor
 import blbl.cat3399.core.ui.cloneInUserScale
 import blbl.cat3399.core.ui.smoothScrollToPositionStart
 import blbl.cat3399.core.util.Format
+import blbl.cat3399.core.util.pgcAccessBadgeTextOf
 import blbl.cat3399.databinding.ActivityVideoDetailBinding
 import blbl.cat3399.feature.player.PlayerActivity
 import blbl.cat3399.feature.player.PlayerPlaylistItem
@@ -57,6 +58,7 @@ class BangumiDetailActivity : BaseActivity() {
     private var metaText: String? = null
     private var desc: String? = null
     private var coverUrl: String? = null
+    private var accessBadgeText: String? = null
 
     private var isFollowed: Boolean? = null
     private var followActionJob: Job? = null
@@ -218,6 +220,13 @@ class BangumiDetailActivity : BaseActivity() {
         title = detail.title
         desc = detail.evaluate.orEmpty()
         coverUrl = detail.coverUrl
+        accessBadgeText =
+            pgcAccessBadgeTextOf(
+                buildList {
+                    addAll(detail.episodes.map { it.badge })
+                    detail.extraSections.forEach { section -> addAll(section.episodes.map { it.badge }) }
+                },
+            )
         if (detail.isFollowed != null) {
             isFollowed = detail.isFollowed
         } else if (isFollowed == null) {
@@ -291,6 +300,7 @@ class BangumiDetailActivity : BaseActivity() {
             metaText = metaText,
             desc = desc,
             coverUrl = coverUrl,
+            accessBadgeText = accessBadgeText,
             usePosterCover = true,
             upName = null,
             upAvatar = null,
@@ -460,6 +470,7 @@ class BangumiDetailActivity : BaseActivity() {
             pubDate = null,
             pubDateText = null,
             coverLeftBottomText = episodeNumberText.takeIf { sectionTitle.isNullOrBlank() },
+            accessBadgeText = pgcAccessBadgeTextOf(ep.badge),
         )
     }
 

@@ -121,7 +121,15 @@ class VideoCardAdapter(
             viewCount?.let { binding.tvView.text = Format.count(it) }
             danmakuCount?.let { binding.tvDanmaku.text = Format.count(it) }
 
-            binding.tvChargeBadge.isVisible = item.isChargingArc
+            val accessBadgeText = item.accessBadgeText?.trim()?.takeIf { it.isNotBlank() }
+            binding.tvChargeBadge.isVisible = accessBadgeText != null || item.isChargingArc
+            binding.tvChargeBadge.text =
+                accessBadgeText
+                    ?: if (item.isChargingArc) {
+                        binding.root.context.getString(R.string.badge_charging)
+                    } else {
+                        ""
+                    }
             ImageLoader.loadInto(binding.ivCover, ImageUrl.cover(item.coverUrl))
 
             applyOverlayTranslations()

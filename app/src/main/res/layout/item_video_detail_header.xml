@@ -42,6 +42,23 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent"
             app:shapeAppearanceOverlay="@style/ShapeAppearanceOverlay_Blbl_Rounded" />
+
+        <TextView
+            android:id="@+id/tv_access_badge_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_margin="@dimen/video_card_text_margin"
+            android:background="@drawable/bg_pgc_access_badge"
+            android:gravity="center"
+            android:minWidth="20dp"
+            android:paddingHorizontal="@dimen/video_card_duration_padding_h"
+            android:paddingVertical="@dimen/video_card_duration_padding_v"
+            android:textColor="@android:color/white"
+            android:textSize="@dimen/video_card_duration_text_size"
+            android:textStyle="bold"
+            android:visibility="gone"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
     </androidx.constraintlayout.widget.ConstraintLayout>
 
     <TextView

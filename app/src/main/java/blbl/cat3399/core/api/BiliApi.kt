@@ -747,10 +747,20 @@ object BiliApi {
                             seasonTypeName = obj.optString("season_type_name").takeIf { it.isNotBlank() },
                             title = obj.optString("title", ""),
                             coverUrl = obj.optString("cover").takeIf { it.isNotBlank() },
-                            badge = obj.optString("badge").takeIf { it.isNotBlank() },
+                            badge =
+                                normalizeBadgeText(obj.optString("badge"))
+                                    ?: normalizeBadgeText(obj.optJSONObject("badge_info")?.optString("text"))
+                                    ?: normalizeBadgeText(obj.optJSONObject("badgeInfo")?.optString("text")),
                             badgeEp =
-                                obj.optString("badge_ep").takeIf { it.isNotBlank() }
-                                    ?: obj.optString("badgeEp").takeIf { it.isNotBlank() },
+                                normalizeBadgeText(obj.optString("badge_ep"))
+                                    ?: normalizeBadgeText(obj.optString("badgeEp"))
+                                    ?: normalizeBadgeText(obj.optJSONObject("badge_ep_info")?.optString("text"))
+                                    ?: normalizeBadgeText(obj.optJSONObject("badgeEpInfo")?.optString("text"))
+                                    ?: obj.optJSONObject("new_ep")?.let { newEp ->
+                                        normalizeBadgeText(newEp.optString("badge"))
+                                            ?: normalizeBadgeText(newEp.optJSONObject("badge_info")?.optString("text"))
+                                            ?: normalizeBadgeText(newEp.optJSONObject("badgeInfo")?.optString("text"))
+                                    },
                             progressText = progressText,
                             totalCount = obj.optInt("total_count").takeIf { it > 0 },
                             isFinish = obj.optInt("is_finish", -1).takeIf { it >= 0 }?.let { it == 1 },
@@ -867,6 +877,10 @@ object BiliApi {
                         val ep = arr.optJSONObject(i) ?: continue
                         val parsedEpId = ep.optLong("id").takeIf { it > 0 } ?: ep.optLong("ep_id").takeIf { it > 0 } ?: continue
                         if (!seen.add(parsedEpId)) continue
+                        val badge =
+                            normalizeBadgeText(ep.optString("badge"))
+                                ?: normalizeBadgeText(ep.optJSONObject("badge_info")?.optString("text"))
+                                ?: normalizeBadgeText(ep.optJSONObject("badgeInfo")?.optString("text"))
                         out.add(
                             BangumiEpisode(
                                 epId = parsedEpId,
@@ -876,7 +890,7 @@ object BiliApi {
                                 title = ep.optString("title", ""),
                                 longTitle = ep.optString("long_title", ""),
                                 coverUrl = ep.optString("cover").takeIf { it.isNotBlank() },
-                                badge = ep.optString("badge").takeIf { it.isNotBlank() },
+                                badge = badge,
                             ),
                         )
                     }
@@ -959,6 +973,14 @@ object BiliApi {
         }
     }
 
+    private fun normalizeBadgeText(raw: String?): String? {
+        val s = raw?.trim().orEmpty()
+        if (s.isBlank()) return null
+        if (s == "0") return null
+        if (s.equals("null", ignoreCase = true)) return null
+        return s
+    }
+
     private fun parsePgcScoreText(any: Any?): String? {
         return when (any) {
             is Number -> any.toDouble().takeIf { it > 0 }?.let { String.format(Locale.getDefault(), "%.1f", it) }
@@ -996,7 +1018,10 @@ object BiliApi {
                         val cover = obj.optString("cover").trim().takeIf { it.isNotBlank() }
                         val seasonType = obj.optInt("season_type", 0).takeIf { it > 0 }
                         val typeName = seasonType?.let(::pgcSeasonTypeName)
-                        val badge = obj.optString("badge").trim().takeIf { it.isNotBlank() }
+                        val badge =
+                            normalizeBadgeText(obj.optString("badge"))
+                                ?: normalizeBadgeText(obj.optJSONObject("badge_info")?.optString("text"))
+                                ?: normalizeBadgeText(obj.optJSONObject("badgeInfo")?.optString("text"))
 
                         val scoreText = parsePgcScoreText(obj.opt("score"))
                         val newEpIndexShow =
@@ -1043,19 +1068,80 @@ object BiliApi {
         return CursorPage(items = items, hasNext = hasNext, nextCursor = nextCursor)
     }
 
+    private fun parsePgcPcBangumiTabToBangumiSeasons(data: JSONObject): CursorPage<BangumiSeason> {
+        val hasNext = data.optInt("has_next", 0) == 1
+        val nextCursor = data.optString("next_cursor", "").trim().takeIf { it.isNotBlank() && hasNext }
+        val modules = data.optJSONArray("modules") ?: JSONArray()
+
+        val items =
+            run {
+                val out = ArrayList<BangumiSeason>(128)
+                val seen = HashSet<Long>(256)
+                for (i in 0 until modules.length()) {
+                    val module = modules.optJSONObject(i) ?: continue
+                    val moduleTitle = module.optString("title", "").trim()
+                    if (!moduleTitle.contains("猜你喜欢")) continue
+                    val list = module.optJSONArray("items") ?: continue
+                    for (j in 0 until list.length()) {
+                        val obj = list.optJSONObject(j) ?: continue
+                        val seasonId = obj.optLong("season_id").takeIf { it > 0 } ?: continue
+                        if (!seen.add(seasonId)) continue
+                        val title = obj.optString("title", "").trim()
+                        if (title.isBlank()) continue
+
+                        val cover = obj.optString("cover", "").trim().takeIf { it.isNotBlank() }
+                        val seasonType = obj.optInt("season_type", 0).takeIf { it > 0 }
+                        val typeName = seasonType?.let(::pgcSeasonTypeName)
+                        val badge = normalizeBadgeText(obj.optJSONObject("badge_info")?.optString("text"))
+                        val badgeEp = normalizeBadgeText(obj.optJSONObject("bottom_right_badge")?.optString("text"))
+                        val newEpIndexShow = obj.optJSONObject("new_ep")?.optString("index_show", "")?.trim().takeIf { !it.isNullOrBlank() }
+                        val followView = obj.optJSONObject("stat")?.optString("follow_view", "")?.trim().takeIf { !it.isNullOrBlank() }
+                        val desc = obj.optString("desc", "").trim().takeIf { it.isNotBlank() }
+                        val subTitle = obj.optString("sub_title", "").trim().takeIf { it.isNotBlank() }
+                        val progressText = badgeEp ?: newEpIndexShow ?: followView ?: desc ?: subTitle
+
+                        out.add(
+                            BangumiSeason(
+                                seasonId = seasonId,
+                                seasonTypeName = typeName,
+                                title = title,
+                                coverUrl = cover,
+                                badge = badge,
+                                badgeEp = badgeEp,
+                                progressText = progressText,
+                                totalCount = null,
+                                lastEpIndex = null,
+                                lastEpId = null,
+                                newestEpIndex = null,
+                                isFinish = null,
+                            ),
+                        )
+                    }
+                }
+                out
+            }
+
+        return CursorPage(items = items, hasNext = hasNext, nextCursor = nextCursor)
+    }
+
     suspend fun pgcBangumiPage(cursor: String? = null, build: Int = PGC_PAGE_BUILD_DEFAULT): CursorPage<BangumiSeason> {
-        val params = LinkedHashMap<String, String>(4)
-        params["mobi_app"] = PGC_PAGE_MOBI_APP_DEFAULT
-        params["build"] = build.toString()
-        cursor?.trim()?.takeIf { it.isNotBlank() }?.let { params["cursor"] = it }
-        val url = BiliClient.withQuery("https://api.bilibili.com/pgc/page/bangumi", params)
+        val safeCursor = cursor?.trim()?.takeIf { it.isNotBlank() } ?: "0"
+        val url =
+            BiliClient.withQuery(
+                "https://api.bilibili.com/pgc/page/pc/bangumi/tab",
+                mapOf(
+                    "is_refresh" to "0",
+                    "cursor" to safeCursor,
+                ),
+            )
         val json = BiliClient.getJson(url)
         val code = json.optInt("code", 0)
         if (code != 0) {
             val msg = json.optString("message", json.optString("msg", ""))
             throw BiliApiException(apiCode = code, apiMessage = msg)
         }
-        return withContext(Dispatchers.Default) { parsePgcPageToBangumiSeasons(json) }
+        val data = json.optJSONObject("data") ?: JSONObject()
+        return withContext(Dispatchers.Default) { parsePgcPcBangumiTabToBangumiSeasons(data) }
     }
 
     suspend fun pgcCinemaTabPage(cursor: String? = null, build: Int = PGC_PAGE_BUILD_DEFAULT): CursorPage<BangumiSeason> {
