@@ -869,47 +869,72 @@ object BiliApi {
         val sections = result.optJSONArray("section") ?: JSONArray()
         val parsed =
             withContext(Dispatchers.Default) {
-                val seen = HashSet<Long>(episodes.length() * 2 + 64)
+                val seen = HashSet<Long>(episodes.length() * 3 + 64)
 
-                fun parseEpisodes(arr: JSONArray): List<BangumiEpisode> {
-                    val out = ArrayList<BangumiEpisode>(arr.length())
-                    for (i in 0 until arr.length()) {
-                        val ep = arr.optJSONObject(i) ?: continue
-                        val parsedEpId = ep.optLong("id").takeIf { it > 0 } ?: ep.optLong("ep_id").takeIf { it > 0 } ?: continue
-                        if (!seen.add(parsedEpId)) continue
-                        val badge =
-                            normalizeBadgeText(ep.optString("badge"))
-                                ?: normalizeBadgeText(ep.optJSONObject("badge_info")?.optString("text"))
-                                ?: normalizeBadgeText(ep.optJSONObject("badgeInfo")?.optString("text"))
-                        out.add(
-                            BangumiEpisode(
-                                epId = parsedEpId,
-                                aid = ep.optLong("aid").takeIf { it > 0 } ?: ep.optLong("avid").takeIf { it > 0 },
-                                cid = ep.optLong("cid").takeIf { it > 0 },
-                                bvid = ep.optString("bvid").takeIf { it.isNotBlank() },
-                                title = ep.optString("title", ""),
-                                longTitle = ep.optString("long_title", ""),
-                                coverUrl = ep.optString("cover").takeIf { it.isNotBlank() },
-                                badge = badge,
-                            ),
-                        )
-                    }
-                    return out
+                fun parseEpisode(ep: JSONObject): BangumiEpisode? {
+                    val parsedEpId = ep.optLong("id").takeIf { it > 0 } ?: ep.optLong("ep_id").takeIf { it > 0 } ?: return null
+                    val badge =
+                        normalizeBadgeText(ep.optString("badge"))
+                            ?: normalizeBadgeText(ep.optJSONObject("badge_info")?.optString("text"))
+                            ?: normalizeBadgeText(ep.optJSONObject("badgeInfo")?.optString("text"))
+                    return BangumiEpisode(
+                        epId = parsedEpId,
+                        aid = ep.optLong("aid").takeIf { it > 0 } ?: ep.optLong("avid").takeIf { it > 0 },
+                        cid = ep.optLong("cid").takeIf { it > 0 },
+                        bvid = ep.optString("bvid").takeIf { it.isNotBlank() },
+                        title = ep.optString("title", ""),
+                        longTitle = ep.optString("long_title", ""),
+                        coverUrl = ep.optString("cover").takeIf { it.isNotBlank() },
+                        badge = badge,
+                    )
                 }
 
-                val mainEpisodes = parseEpisodes(episodes)
+                val mainEpisodes = ArrayList<BangumiEpisode>(episodes.length())
+                val extraEpisodesFromRoot = ArrayList<BangumiEpisode>(32)
+                for (i in 0 until episodes.length()) {
+                    val ep = episodes.optJSONObject(i) ?: continue
+                    val parsedEpisode = parseEpisode(ep) ?: continue
+                    if (isPgcMainEpisodeFromSeasonEpisodes(ep = ep, normalizedBadge = parsedEpisode.badge)) {
+                        if (!seen.add(parsedEpisode.epId)) continue
+                        mainEpisodes.add(parsedEpisode)
+                    } else {
+                        extraEpisodesFromRoot.add(parsedEpisode)
+                    }
+                }
 
-                val extraSections = ArrayList<BangumiEpisodeSection>(sections.length())
+                val extraSections = ArrayList<BangumiEpisodeSection>(sections.length() + 1)
                 for (i in 0 until sections.length()) {
                     val section = sections.optJSONObject(i) ?: continue
                     val sectionTitle = section.optString("title", "").trim()
                     val sectionEpisodes = section.optJSONArray("episodes") ?: continue
-                    val parsedEpisodes = parseEpisodes(sectionEpisodes)
-                    if (parsedEpisodes.isEmpty()) continue
+                    val parsedEpisodes = ArrayList<BangumiEpisode>(sectionEpisodes.length())
+                    for (j in 0 until sectionEpisodes.length()) {
+                        val ep = sectionEpisodes.optJSONObject(j) ?: continue
+                        val parsedEpisode = parseEpisode(ep) ?: continue
+                        if (!seen.add(parsedEpisode.epId)) continue
+                        parsedEpisodes.add(parsedEpisode)
+                    }
+                    if (parsedEpisodes.isEmpty()) {
+                        continue
+                    }
                     extraSections.add(
                         BangumiEpisodeSection(
                             title = sectionTitle,
                             episodes = parsedEpisodes,
+                        ),
+                    )
+                }
+
+                val rootOnlyExtras = ArrayList<BangumiEpisode>(extraEpisodesFromRoot.size)
+                for (episode in extraEpisodesFromRoot) {
+                    if (!seen.add(episode.epId)) continue
+                    rootOnlyExtras.add(episode)
+                }
+                if (rootOnlyExtras.isNotEmpty()) {
+                    extraSections.add(
+                        BangumiEpisodeSection(
+                            title = "其他内容",
+                            episodes = rootOnlyExtras,
                         ),
                     )
                 }
@@ -979,6 +1004,46 @@ object BiliApi {
         if (s == "0") return null
         if (s.equals("null", ignoreCase = true)) return null
         return s
+    }
+
+    internal fun isPgcMainEpisodeFromSeasonEpisodes(
+        ep: JSONObject,
+        normalizedBadge: String? = null,
+    ): Boolean {
+        val sectionType = parseOptionalInt(ep.opt("section_type"))
+        if (sectionType != null && sectionType != 0) return false
+
+        val texts =
+            buildList {
+                add(normalizeBadgeText(normalizedBadge))
+                add(normalizeBadgeText(ep.optJSONObject("badge_info")?.optString("text")))
+                add(normalizeBadgeText(ep.optJSONObject("badgeInfo")?.optString("text")))
+                add(ep.optString("show_title"))
+                add(ep.optString("share_copy"))
+            }
+        return texts.none(::looksLikePgcExtraByText)
+    }
+
+    private fun parseOptionalInt(raw: Any?): Int? {
+        return when (raw) {
+            null,
+            JSONObject.NULL,
+            -> null
+            is Number -> raw.toInt()
+            is String -> raw.trim().toIntOrNull()
+            else -> null
+        }
+    }
+
+    private fun looksLikePgcExtraByText(raw: String?): Boolean {
+        val text = raw?.trim().orEmpty()
+        if (text.isBlank()) return false
+        if (text.contains("预告")) return true
+        if (text.contains("花絮")) return true
+        if (text.contains("番外")) return true
+        if (text.contains("幕后")) return true
+        if (text.uppercase(Locale.ROOT).contains("PV")) return true
+        return false
     }
 
     private fun parsePgcScoreText(any: Any?): String? {
@@ -1126,13 +1191,15 @@ object BiliApi {
 
     suspend fun pgcBangumiPage(cursor: String? = null, build: Int = PGC_PAGE_BUILD_DEFAULT): CursorPage<BangumiSeason> {
         val safeCursor = cursor?.trim()?.takeIf { it.isNotBlank() } ?: "0"
+        val params = LinkedHashMap<String, String>(4)
+        params["mobi_app"] = PGC_PAGE_MOBI_APP_DEFAULT
+        params["build"] = build.toString()
+        params["is_refresh"] = "0"
+        params["cursor"] = safeCursor
         val url =
             BiliClient.withQuery(
                 "https://api.bilibili.com/pgc/page/pc/bangumi/tab",
-                mapOf(
-                    "is_refresh" to "0",
-                    "cursor" to safeCursor,
-                ),
+                params,
             )
         val json = BiliClient.getJson(url)
         val code = json.optInt("code", 0)
