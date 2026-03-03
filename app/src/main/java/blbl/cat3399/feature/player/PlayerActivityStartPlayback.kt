@@ -118,6 +118,7 @@ internal fun PlayerActivity.startPlayback(
     cidExtra: Long?,
     epIdExtra: Long?,
     aidExtra: Long?,
+    seasonIdExtra: Long? = null,
     initialTitle: String?,
     startedFromList: PlayerVideoListKind? = null,
 ) {
@@ -157,6 +158,9 @@ internal fun PlayerActivity.startPlayback(
     currentBvid = safeBvid
     currentEpId = epIdExtra
     currentAid = safeAid
+    currentSeasonId =
+        seasonIdExtra?.takeIf { it > 0L }
+            ?: parseBangumiSeasonIdFromSource(pageListSource)
     currentCid = -1L
 
     trace =

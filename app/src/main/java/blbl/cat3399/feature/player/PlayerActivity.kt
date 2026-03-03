@@ -201,6 +201,7 @@ class PlayerActivity : BaseActivity() {
     internal var currentCid: Long = -1L
     internal var currentEpId: Long? = null
     internal var currentAid: Long? = null
+    internal var currentSeasonId: Long? = null
     internal var currentUpMid: Long = 0L
     internal var currentUpName: String? = null
     internal var currentUpAvatar: String? = null
@@ -611,6 +612,7 @@ class PlayerActivity : BaseActivity() {
         val cidExtra = intent.getLongExtra(EXTRA_CID, -1L).takeIf { it > 0 }
         val epIdExtra = intent.getLongExtra(EXTRA_EP_ID, -1L).takeIf { it > 0 }
         val aidExtra = intent.getLongExtra(EXTRA_AID, -1L).takeIf { it > 0 }
+        val seasonIdExtra = intent.getLongExtra(EXTRA_SEASON_ID, -1L).takeIf { it > 0 }
         pageListToken = intent.getStringExtra(EXTRA_PLAYLIST_TOKEN)?.trim()?.takeIf { it.isNotBlank() }
         pageListIndex = intent.getIntExtra(EXTRA_PLAYLIST_INDEX, -1)
         val pageListIndexExtra = pageListIndex
@@ -649,6 +651,7 @@ class PlayerActivity : BaseActivity() {
         currentBvid = bvid
         currentEpId = epIdExtra
         currentAid = aidExtra
+        currentSeasonId = seasonIdExtra ?: parseBangumiSeasonIdFromSource(pageListSource)
         if (currentBvid.isBlank() && currentAid == null) {
             AppToast.show(this, "缺少 bvid/aid")
             finish()
@@ -942,6 +945,7 @@ class PlayerActivity : BaseActivity() {
             cidExtra = cidExtra,
             epIdExtra = epIdExtra,
             aidExtra = aidExtra,
+            seasonIdExtra = seasonIdExtra,
             initialTitle = pageListItems.getOrNull(pageListIndex)?.title,
             startedFromList = PlayerVideoListKind.PAGE,
         )
@@ -1889,10 +1893,17 @@ class PlayerActivity : BaseActivity() {
         return true
     }
 
-    private fun parseSeasonIdFromPlaylistSource(): Long? {
-        val src = pageListSource?.trim().orEmpty()
+    internal fun parseBangumiSeasonIdFromSource(source: String?): Long? {
+        val src = source?.trim().orEmpty()
         if (!src.startsWith("Bangumi:")) return null
-        return src.removePrefix("Bangumi:").trim().toLongOrNull()?.takeIf { it > 0 }
+        val payload = src.removePrefix("Bangumi:").trim()
+        if (payload.isBlank()) return null
+        // Support both legacy "Bangumi:<seasonId>" and current "Bangumi:<seasonId>:<listKind>".
+        return payload.substringBefore(':').trim().toLongOrNull()?.takeIf { it > 0L }
+    }
+
+    private fun parseSeasonIdFromPlaylistSource(): Long? {
+        return currentSeasonId?.takeIf { it > 0L } ?: parseBangumiSeasonIdFromSource(pageListSource)
     }
 
     private fun shouldReportWebHeartbeatNow(): Boolean {
@@ -3084,6 +3095,7 @@ class PlayerActivity : BaseActivity() {
         const val EXTRA_CID = "cid"
         const val EXTRA_EP_ID = "ep_id"
         const val EXTRA_AID = "aid"
+        const val EXTRA_SEASON_ID = "season_id"
         const val EXTRA_PLAYLIST_TOKEN = "playlist_token"
         const val EXTRA_PLAYLIST_INDEX = "playlist_index"
         internal const val EXTRA_ENGINE_SWITCH_RESUME_POSITION_MS = "engine_switch_resume_position_ms"
