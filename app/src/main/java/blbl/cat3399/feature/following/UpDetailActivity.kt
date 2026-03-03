@@ -97,6 +97,7 @@ class UpDetailActivity : BaseActivity() {
     private var pendingFocusFirstSectionItemAfterLoad: Boolean = false
     private var archiveGridController: DpadGridController? = null
     private var focusListener: android.view.ViewTreeObserver.OnGlobalFocusChangeListener? = null
+    private var didRequestInitialTab0Focus: Boolean = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -120,7 +121,6 @@ class UpDetailActivity : BaseActivity() {
         setupAppBar()
         setupAdapters()
         setupTabs()
-        focusSelectedTab()
 
         binding.recycler.setHasFixedSize(true)
         (binding.recycler.itemAnimator as? SimpleItemAnimator)?.supportsChangeAnimations = false
@@ -161,7 +161,12 @@ class UpDetailActivity : BaseActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) Immersive.apply(this, BiliClient.prefs.fullscreenEnabled)
-        if (hasFocus) ensureInitialFocus()
+        // Avoid showing focus highlight when user entered via touch; rely on first DPAD nav key to
+        // establish focus in that case (see dispatchKeyEvent()).
+        if (hasFocus && !binding.root.isInTouchMode) {
+            scheduleInitialTab0Focus()
+            ensureInitialFocus()
+        }
         if (hasFocus) maybeConsumePendingFocusFirstContentAfterLoad()
     }
 
@@ -171,13 +176,15 @@ class UpDetailActivity : BaseActivity() {
             refreshCurrentTab()
             return true
         }
+
         if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && event.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
             val focused = currentFocus
             if (focused != null && FocusTreeUtils.isDescendantOf(focused, binding.recycler)) {
                 val next = focused.focusSearch(android.view.View.FOCUS_UP)
                 if (next == null || !FocusTreeUtils.isDescendantOf(next, binding.recycler)) {
-                    focusTabsFromContentEdge()
-                    return true
+                    // Only consume when we really moved focus; otherwise let the framework attempt
+                    // default focus-search (better than trapping DPAD_UP inside the grid).
+                    return focusTabsFromContentEdge()
                 }
             }
         }
@@ -190,6 +197,9 @@ class UpDetailActivity : BaseActivity() {
 
     private fun setupHeaderButtons() {
         binding.btnBack.setOnClickListener { finish() }
+        // Some TV boxes keep the window in touch-mode longer than expected; allow requestFocus()
+        // to succeed when we route focus via DPAD handlers.
+        binding.btnBack.isFocusableInTouchMode = true
         binding.btnBack.setOnKeyListener { _, keyCode, event ->
             if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
             if (keyCode != KeyEvent.KEYCODE_DPAD_DOWN) return@setOnKeyListener false
@@ -198,6 +208,7 @@ class UpDetailActivity : BaseActivity() {
         }
 
         binding.btnFollow.setOnClickListener { onFollowClicked() }
+        binding.btnFollow.isFocusableInTouchMode = true
         binding.btnFollow.setOnKeyListener { _, keyCode, event ->
             if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
             if (keyCode != KeyEvent.KEYCODE_DPAD_DOWN) return@setOnKeyListener false
@@ -327,7 +338,9 @@ class UpDetailActivity : BaseActivity() {
             tabLayout.enableDpadTabFocus(selectOnFocusProvider = { BiliClient.prefs.tabSwitchFollowsFocus })
             val tabStrip = tabLayout.getChildAt(0) as? ViewGroup ?: return@postIfAlive
             for (i in 0 until tabStrip.childCount) {
-                tabStrip.getChildAt(i).setOnKeyListener { _, keyCode, event ->
+                val tabView = tabStrip.getChildAt(i)
+                tabView.isFocusableInTouchMode = true
+                tabView.setOnKeyListener { _, keyCode, event ->
                     if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
                     when (keyCode) {
                         KeyEvent.KEYCODE_DPAD_UP -> {
@@ -345,6 +358,21 @@ class UpDetailActivity : BaseActivity() {
                     }
                 }
             }
+        }
+    }
+
+    private fun scheduleInitialTab0Focus() {
+        // Mirror VideoDetailActivity: post a single initial focus request after the first layout,
+        // so focus lands on the primary entry control (Tab0) instead of the header button.
+        val tabLayout = binding.tabLayout
+        tabLayout.postIfAlive(isAlive = { !isFinishing && !isDestroyed }) {
+            // Don't create focus highlight when entering via touch.
+            if (binding.root.isInTouchMode) return@postIfAlive
+            if (didRequestInitialTab0Focus) return@postIfAlive
+            didRequestInitialTab0Focus = true
+
+            tabLayout.getTabAt(0)?.select()
+            requestFocusSelectedTabView()
         }
     }
 
@@ -455,14 +483,16 @@ class UpDetailActivity : BaseActivity() {
         binding.btnBack.requestFocus()
     }
 
-    private fun focusSelectedTab(): Boolean {
+    private fun requestFocusSelectedTabView(): Boolean {
         val tabLayout = binding.tabLayout
-        val tabStrip = tabLayout.getChildAt(0) as? ViewGroup ?: return binding.btnBack.requestFocus()
+        val tabStrip = tabLayout.getChildAt(0) as? ViewGroup ?: return false
+        if (tabStrip.childCount <= 0) return false
         val selected = tabLayout.selectedTabPosition.takeIf { it >= 0 } ?: 0
 
         fun tryFocusTabView(view: android.view.View?): Boolean {
             if (view == null) return false
             view.isFocusable = true
+            view.isFocusableInTouchMode = true
             return view.requestFocus()
         }
 
@@ -470,11 +500,16 @@ class UpDetailActivity : BaseActivity() {
         for (i in 0 until tabStrip.childCount) {
             if (tryFocusTabView(tabStrip.getChildAt(i))) return true
         }
+        return false
+    }
+
+    private fun focusSelectedTab(): Boolean {
+        if (requestFocusSelectedTabView()) return true
         return binding.btnBack.requestFocus()
     }
 
-    private fun focusTabsFromContentEdge() {
-        focusSelectedTab()
+    private fun focusTabsFromContentEdge(): Boolean {
+        return requestFocusSelectedTabView()
     }
 
     private fun requestFocusFirstContentFromTab(): Boolean {
@@ -1112,8 +1147,7 @@ class UpDetailActivity : BaseActivity() {
                 callbacks =
                     object : DpadGridController.Callbacks {
                         override fun onTopEdge(): Boolean {
-                            focusTabsFromContentEdge()
-                            return true
+                            return focusTabsFromContentEdge()
                         }
 
                         override fun onLeftEdge(): Boolean {
@@ -1134,6 +1168,9 @@ class UpDetailActivity : BaseActivity() {
                     DpadGridController.Config(
                         isEnabled = { !isFinishing && !isDestroyed && currentTab == UpTab.ARCHIVE },
                         enableCenterLongPressToLongClick = true,
+                        // Let DPAD_UP bubble if we couldn't move focus to the tab strip. Consuming
+                        // unconditionally creates a focus trap (can't reach header/tab).
+                        consumeUpAtTopEdge = false,
                     ),
             ).also { it.install() }
     }

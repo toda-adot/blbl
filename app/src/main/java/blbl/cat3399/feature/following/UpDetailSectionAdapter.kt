@@ -37,7 +37,7 @@ data class UpDetailSection(
 class UpDetailSectionAdapter(
     private val onVideoClick: (section: UpDetailSection, card: VideoCard, index: Int) -> Unit,
     private val onRequestLoadMore: (section: UpDetailSection, requestedNextIndex: Int) -> Unit,
-    private val onRequestMoveToTabs: (() -> Unit)? = null,
+    private val onRequestMoveToTabs: (() -> Boolean)? = null,
 ) : RecyclerView.Adapter<UpDetailSectionAdapter.Vh>() {
     private val items = ArrayList<UpDetailSection>()
     private var attachedRecyclerView: RecyclerView? = null
@@ -121,7 +121,7 @@ class UpDetailSectionAdapter(
         private val binding: ItemUpSectionBinding,
         private val onVideoClick: (section: UpDetailSection, card: VideoCard, index: Int) -> Unit,
         private val onRequestLoadMore: (section: UpDetailSection, requestedNextIndex: Int) -> Unit,
-        private val onRequestMoveToTabs: (() -> Unit)?,
+        private val onRequestMoveToTabs: (() -> Boolean)?,
     ) : RecyclerView.ViewHolder(binding.root) {
         private val videoAdapter: VideoCardAdapter
         private var boundSection: UpDetailSection? = null
@@ -238,8 +238,7 @@ class UpDetailSectionAdapter(
                                     // Let focus move to the previous section when possible; if no candidate exists,
                                     // explicitly route focus to the Activity tab bar to avoid "focus sink" behavior.
                                     if (view.focusSearch(View.FOCUS_UP) != null) return@setOnKeyListener false
-                                    onRequestMoveToTabs?.invoke()
-                                    true
+                                    onRequestMoveToTabs?.invoke() == true
                                 }
 
                                 KeyEvent.KEYCODE_DPAD_DOWN -> {
