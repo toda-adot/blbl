@@ -98,9 +98,13 @@ internal object PlayerCustomShortcutsStore {
     private const val KEY_PARAMS = "p"
 
     fun isForbiddenKeyCode(keyCode: Int): Boolean {
+        // Reserve "system / navigation / confirm" keys so custom shortcuts never break basic navigation.
         return keyCode == KeyEvent.KEYCODE_BACK ||
             keyCode == KeyEvent.KEYCODE_ESCAPE ||
-            keyCode == KeyEvent.KEYCODE_BUTTON_B
+            keyCode == KeyEvent.KEYCODE_BUTTON_B ||
+            keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+            keyCode == KeyEvent.KEYCODE_ENTER ||
+            keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
     }
 
     fun parse(raw: String?): List<PlayerCustomShortcut> {
@@ -328,4 +332,3 @@ internal object PlayerCustomShortcutsStore {
         }
     }
 }
-

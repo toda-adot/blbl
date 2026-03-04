@@ -1456,7 +1456,15 @@ class SettingsInteractionHandler(
 
                         if (keyCode == KeyEvent.KEYCODE_UNKNOWN || keyCode <= 0) return@setOnKeyListener true
                         if (PlayerCustomShortcutsStore.isForbiddenKeyCode(keyCode)) {
-                            AppToast.show(activity, "该按键不允许绑定")
+                            val msg =
+                                when (keyCode) {
+                                    KeyEvent.KEYCODE_DPAD_CENTER,
+                                    KeyEvent.KEYCODE_ENTER,
+                                    KeyEvent.KEYCODE_NUMPAD_ENTER,
+                                    -> "确认键不允许绑定，请换用其他按键"
+                                    else -> "该按键不允许绑定"
+                                }
+                            AppToast.show(activity, msg)
                             return@setOnKeyListener true
                         }
 
