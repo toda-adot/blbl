@@ -370,6 +370,21 @@ internal fun PlayerActivity.maybeScheduleAutoResume(
     if (playbackToken != autoResumeToken) return
     val engine = player ?: return
 
+    pendingIntentResumeCandidate?.let { cand ->
+        val expectedCid = pendingIntentResumeCid
+        val expectedEpId = pendingIntentResumeEpId
+        val epId = currentEpId
+        val cidMatches = expectedCid == null || expectedCid == cid
+        val epIdMatches = expectedEpId == null || (epId != null && epId == expectedEpId)
+        pendingIntentResumeCandidate = null
+        pendingIntentResumeCid = null
+        pendingIntentResumeEpId = null
+        if (cidMatches && epIdMatches) {
+            scheduleAutoResume(engine = engine, candidate = cand, playbackToken = playbackToken)
+            return
+        }
+    }
+
     val strictCidMatch = isMultiPagePlaylist(partsListItems, currentBvid)
     extractResumeCandidateFromPlayJson(playJson)?.let { cand ->
         val data = playJson.optJSONObject("data") ?: playJson.optJSONObject("result") ?: JSONObject()

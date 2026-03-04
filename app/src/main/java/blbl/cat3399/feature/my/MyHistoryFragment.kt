@@ -65,6 +65,7 @@ class MyHistoryFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler 
                                     epId = it.epId,
                                     aid = it.aid,
                                     title = it.title,
+                                    seasonId = it.seasonId,
                                 )
                             }
                         val token =
@@ -101,6 +102,12 @@ class MyHistoryFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler 
                                     .putExtra(PlayerActivity.EXTRA_CID, card.cid ?: -1L)
                                     .apply { card.epId?.let { putExtra(PlayerActivity.EXTRA_EP_ID, it) } }
                                     .apply { card.aid?.let { putExtra(PlayerActivity.EXTRA_AID, it) } }
+                                    .apply { card.seasonId?.let { putExtra(PlayerActivity.EXTRA_SEASON_ID, it) } }
+                                    .apply {
+                                        card.progressSec?.takeIf { it >= 5L }?.let { sec ->
+                                            putExtra(PlayerActivity.EXTRA_START_POSITION_MS, sec * 1000L)
+                                        }
+                                    }
                                     .putExtra(PlayerActivity.EXTRA_PLAYLIST_TOKEN, token)
                                     .putExtra(PlayerActivity.EXTRA_PLAYLIST_INDEX, pos),
                             )

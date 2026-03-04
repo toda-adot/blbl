@@ -43,5 +43,6 @@ data class BangumiSeasonDetail(
     val episodes: List<BangumiEpisode>,
     val extraSections: List<BangumiEpisodeSection>,
     val progressLastEpId: Long?,
+    val progressLastTimeSec: Long?,
     val isFollowed: Boolean?,
 )

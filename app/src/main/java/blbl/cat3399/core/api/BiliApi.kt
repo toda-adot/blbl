@@ -17,6 +17,7 @@ import android.util.Base64
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.net.WebCookieMaintainer
 import blbl.cat3399.core.util.Format
+import blbl.cat3399.core.util.parseBangumiRedirectUrl
 import blbl.cat3399.proto.dm.DmSegMobileReply
 import blbl.cat3399.proto.dmview.DmWebViewReply
 import kotlinx.coroutines.Dispatchers
@@ -443,6 +444,13 @@ object BiliApi {
                     val aid = history.optLong("oid").takeIf { v -> v > 0 }
                     val cid = history.optLong("cid").takeIf { v -> v > 0 }
                     val epId = history.optLong("epid").takeIf { v -> v > 0 }
+                    val seasonId =
+                        if (businessType == "pgc") {
+                            it.optLong("kid").takeIf { v -> v > 0 }
+                                ?: parseBangumiRedirectUrl(it.optString("uri", ""))?.seasonId
+                        } else {
+                            null
+                        }
 
                     // For archive items bvid should exist; for PGC items bvid may be absent so we fall back to aid/epId.
                     if (businessType == "archive" && bvid.isBlank()) continue
@@ -455,6 +463,7 @@ object BiliApi {
                             ?: ""
 
                     val viewAtSec = it.optLong("view_at").takeIf { v -> v > 0 }
+                    val progressSec = it.optLong("progress").takeIf { v -> v > 0 }
                     val showTitle = it.optString("show_title", "").trim().takeIf { s -> s.isNotBlank() }
                     val badge = it.optString("badge", "").trim().takeIf { s -> s.isNotBlank() }
                     val subtitleParts = buildList {
@@ -469,6 +478,7 @@ object BiliApi {
                             cid = cid,
                             aid = aid,
                             epId = epId,
+                            seasonId = seasonId,
                             business = businessType.takeIf { s -> s.isNotBlank() },
                             title = it.optString("title", ""),
                             coverUrl = coverUrl,
@@ -482,6 +492,7 @@ object BiliApi {
                             danmaku = null,
                             pubDate = null,
                             pubDateText = subtitle,
+                            progressSec = progressSec,
                         ),
                     )
                 }
@@ -982,6 +993,7 @@ object BiliApi {
             episodes = parsed.first,
             extraSections = parsed.second,
             progressLastEpId = progressLastEpId,
+            progressLastTimeSec = rawUserLastTime,
             isFollowed = isFollowed,
         )
     }

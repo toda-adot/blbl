@@ -22,11 +22,16 @@ data class VideoCard(
     val coverLeftBottomText: String? = null,
     // Optional access badge rendered on the cover (top-right). Used by PGC ("大会员"/"限免"/"付费") etc.
     val accessBadgeText: String? = null,
+    // Optional season id (ssid). Used by PGC playback/reporting flows.
+    val seasonId: Long? = null,
+    // Optional last watched progress from listing APIs (seconds).
+    val progressSec: Long? = null,
 ) {
     fun stableKey(): String =
         when {
             bvid.isNotBlank() -> "bvid:$bvid"
             epId != null && epId > 0 -> "ep:$epId"
+            seasonId != null && seasonId > 0 -> "sid:$seasonId"
             aid != null && aid > 0 -> "aid:$aid"
             cid != null && cid > 0 -> "cid:$cid"
             else -> "title:${title.hashCode()}"

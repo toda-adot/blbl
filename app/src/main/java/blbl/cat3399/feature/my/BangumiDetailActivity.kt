@@ -47,6 +47,8 @@ class BangumiDetailActivity : BaseActivity() {
     private var requestToken: Int = 0
 
     private var resolvedSeasonId: Long? = null
+    private var progressLastEpId: Long? = null
+    private var progressLastTimeSec: Long? = null
 
     private val seasonIdArg: Long? by lazy { intent.getLongExtra(EXTRA_SEASON_ID, -1L).takeIf { it > 0L } }
     private val epIdArg: Long? by lazy { intent.getLongExtra(EXTRA_EP_ID, -1L).takeIf { it > 0L } }
@@ -160,8 +162,24 @@ class BangumiDetailActivity : BaseActivity() {
                     applyHeader(seasonScrollToStart = true)
                     binding.recycler.post { headerAdapter.requestFocusSeasonOrder() }
                 },
-                onPartCardClick = { card, _ -> playEpisodeCard(card, listKind = "main") },
-                onSeasonCardClick = { card, _ -> playEpisodeCard(card, listKind = "extra") },
+                onPartCardClick = { card, _ ->
+                    val startPositionMs =
+                        if (card.epId != null && card.epId == progressLastEpId) {
+                            progressLastTimeSec?.takeIf { it >= 5L }?.times(1000L)
+                        } else {
+                            null
+                        }
+                    playEpisodeCard(card, listKind = "main", startPositionMs = startPositionMs)
+                },
+                onSeasonCardClick = { card, _ ->
+                    val startPositionMs =
+                        if (card.epId != null && card.epId == progressLastEpId) {
+                            progressLastTimeSec?.takeIf { it >= 5L }?.times(1000L)
+                        } else {
+                            null
+                        }
+                    playEpisodeCard(card, listKind = "extra", startPositionMs = startPositionMs)
+                },
             )
 
         binding.recycler.layoutManager = LinearLayoutManager(this)
@@ -220,6 +238,8 @@ class BangumiDetailActivity : BaseActivity() {
         title = detail.title
         desc = detail.evaluate.orEmpty()
         coverUrl = detail.coverUrl
+        progressLastEpId = detail.progressLastEpId
+        progressLastTimeSec = detail.progressLastTimeSec
         accessBadgeText =
             pgcAccessBadgeTextOf(
                 buildList {
@@ -335,7 +355,13 @@ class BangumiDetailActivity : BaseActivity() {
         if (picked != null) {
             val card = mainEpisodeCards.firstOrNull { it.epId == picked.epId }
             if (card != null) {
-                playEpisodeCard(card, listKind = "main")
+                val startPositionMs =
+                    if (picked.epId == progressLastEpId) {
+                        progressLastTimeSec?.takeIf { it >= 5L }?.times(1000L)
+                    } else {
+                        null
+                    }
+                playEpisodeCard(card, listKind = "main", startPositionMs = startPositionMs)
                 return
             }
         }
@@ -389,7 +415,11 @@ class BangumiDetailActivity : BaseActivity() {
             }
     }
 
-    private fun playEpisodeCard(card: VideoCard, listKind: String) {
+    private fun playEpisodeCard(
+        card: VideoCard,
+        listKind: String,
+        startPositionMs: Long? = null,
+    ) {
         val seasonId = resolvedSeasonId ?: seasonIdArg
         if (seasonId == null || seasonId <= 0L) {
             AppToast.show(this, "缺少 seasonId")
@@ -432,6 +462,9 @@ class BangumiDetailActivity : BaseActivity() {
                 .putExtra(PlayerActivity.EXTRA_SEASON_ID, seasonId)
                 .apply { card.epId?.let { putExtra(PlayerActivity.EXTRA_EP_ID, it) } }
                 .apply { card.aid?.let { putExtra(PlayerActivity.EXTRA_AID, it) } }
+                .apply {
+                    startPositionMs?.takeIf { it >= 5_000L }?.let { putExtra(PlayerActivity.EXTRA_START_POSITION_MS, it) }
+                }
                 .putExtra(PlayerActivity.EXTRA_PLAYLIST_TOKEN, token)
                 .putExtra(PlayerActivity.EXTRA_PLAYLIST_INDEX, idx),
         )

@@ -20,6 +20,7 @@ data class PlayerPlaylistItem(
     val epId: Long? = null,
     val aid: Long? = null,
     val title: String? = null,
+    val seasonId: Long? = null,
 )
 
 internal sealed interface Playable {

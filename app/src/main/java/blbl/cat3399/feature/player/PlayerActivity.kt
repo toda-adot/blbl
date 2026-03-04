@@ -110,6 +110,9 @@ class PlayerActivity : BaseActivity() {
     private var ijkTextureSurface: Surface? = null
     internal var pendingStartPositionMs: Long? = null
     internal var pendingStartPlayWhenReady: Boolean? = null
+    internal var pendingIntentResumeCandidate: ResumeCandidate? = null
+    internal var pendingIntentResumeCid: Long? = null
+    internal var pendingIntentResumeEpId: Long? = null
     internal val sidePanelFocusReturn = FocusReturn()
     internal val commentImageViewerFocusReturn = FocusReturn()
     internal var debugJob: kotlinx.coroutines.Job? = null
@@ -545,6 +548,7 @@ class PlayerActivity : BaseActivity() {
         val isPgc = epId != null && epId > 0L
         val heartbeatType = if (isPgc) 4 else 3
         val seasonId = parseSeasonIdFromPlaylistSource()
+        val exitPlayType = if (exitCleanupRequested || isFinishing) 4 else 0
 
         if (shouldHistory && aid != null) trace?.log("report:history:enqueue", "sec=$progressSec reason=$reason")
         if (shouldHeartbeat) trace?.log("report:heartbeat:enqueue", "sec=$progressSec type=$heartbeatType reason=$reason")
@@ -568,7 +572,7 @@ class PlayerActivity : BaseActivity() {
                         seasonId = seasonId.takeIf { isPgc },
                         playedTimeSec = progressSec,
                         type = heartbeatType,
-                        playType = 0,
+                        playType = exitPlayType,
                     )
                 }.onSuccess {
                     trace?.log("report:heartbeat", "ok=1 sec=$progressSec type=$heartbeatType reason=$reason")
@@ -613,6 +617,9 @@ class PlayerActivity : BaseActivity() {
         val epIdExtra = intent.getLongExtra(EXTRA_EP_ID, -1L).takeIf { it > 0 }
         val aidExtra = intent.getLongExtra(EXTRA_AID, -1L).takeIf { it > 0 }
         val seasonIdExtra = intent.getLongExtra(EXTRA_SEASON_ID, -1L).takeIf { it > 0 }
+        val startPositionMsExtra =
+            intent.getLongExtra(EXTRA_START_POSITION_MS, -1L)
+                .takeIf { intent.hasExtra(EXTRA_START_POSITION_MS) && it > 0L }
         pageListToken = intent.getStringExtra(EXTRA_PLAYLIST_TOKEN)?.trim()?.takeIf { it.isNotBlank() }
         pageListIndex = intent.getIntExtra(EXTRA_PLAYLIST_INDEX, -1)
         val pageListIndexExtra = pageListIndex
@@ -652,6 +659,16 @@ class PlayerActivity : BaseActivity() {
         currentEpId = epIdExtra
         currentAid = aidExtra
         currentSeasonId = seasonIdExtra ?: parseBangumiSeasonIdFromSource(pageListSource)
+        if (startPositionMsExtra != null) {
+            pendingIntentResumeCandidate =
+                ResumeCandidate(
+                    rawTime = startPositionMsExtra,
+                    rawTimeUnitHint = RawTimeUnitHint.MILLIS_LIKELY,
+                    source = "intent",
+                )
+            pendingIntentResumeCid = cidExtra
+            pendingIntentResumeEpId = epIdExtra
+        }
         if (currentBvid.isBlank() && currentAid == null) {
             AppToast.show(this, "缺少 bvid/aid")
             finish()
@@ -3096,6 +3113,7 @@ class PlayerActivity : BaseActivity() {
         const val EXTRA_EP_ID = "ep_id"
         const val EXTRA_AID = "aid"
         const val EXTRA_SEASON_ID = "season_id"
+        const val EXTRA_START_POSITION_MS = "start_position_ms"
         const val EXTRA_PLAYLIST_TOKEN = "playlist_token"
         const val EXTRA_PLAYLIST_INDEX = "playlist_index"
         internal const val EXTRA_ENGINE_SWITCH_RESUME_POSITION_MS = "engine_switch_resume_position_ms"

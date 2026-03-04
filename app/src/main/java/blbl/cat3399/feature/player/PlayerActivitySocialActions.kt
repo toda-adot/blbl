@@ -564,6 +564,7 @@ internal fun PlayerActivity.playPageListIndex(index: Int) {
         cidExtra = item.cid?.takeIf { it > 0 },
         epIdExtra = item.epId?.takeIf { it > 0 },
         aidExtra = item.aid?.takeIf { it > 0 },
+        seasonIdExtra = item.seasonId?.takeIf { it > 0 },
         initialTitle = item.title,
         startedFromList = PlayerVideoListKind.PAGE,
     )
@@ -590,6 +591,7 @@ internal fun PlayerActivity.playPartsListIndex(index: Int) {
         cidExtra = item.cid?.takeIf { it > 0 },
         epIdExtra = item.epId?.takeIf { it > 0 },
         aidExtra = item.aid?.takeIf { it > 0 },
+        seasonIdExtra = item.seasonId?.takeIf { it > 0 },
         initialTitle = item.title,
         startedFromList = PlayerVideoListKind.PARTS,
     )

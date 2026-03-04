@@ -290,7 +290,8 @@ object PlayerPlaylistStore {
 
         for (i in items.indices) {
             val item = items[i]
-            if (item.bvid.isBlank()) continue
+            val hasArchiveId = item.bvid.isNotBlank() || (item.aid ?: 0L) > 0L
+            if (!hasArchiveId) continue
             outItems.add(item)
             if (hasCards) {
                 val card = uiCards.getOrNull(i)
@@ -306,6 +307,7 @@ object PlayerPlaylistStore {
                             cid = item.cid,
                             aid = item.aid,
                             epId = item.epId,
+                            seasonId = item.seasonId,
                             title = fallbackTitle,
                             coverUrl = "",
                             durationSec = 0,
