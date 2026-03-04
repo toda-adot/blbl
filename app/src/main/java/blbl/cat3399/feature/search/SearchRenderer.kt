@@ -25,6 +25,7 @@ import blbl.cat3399.core.ui.enableDpadTabFocus
 import blbl.cat3399.core.ui.hideImeReliable
 import blbl.cat3399.core.ui.popup.AppPopup
 import blbl.cat3399.core.ui.postIfAlive
+import blbl.cat3399.core.ui.requestFocusFirstItemOrSelfAfterRefresh
 import blbl.cat3399.core.ui.showImeReliable
 import blbl.cat3399.core.ui.uiScaler
 import blbl.cat3399.databinding.FragmentSearchBinding
@@ -652,12 +653,17 @@ class SearchRenderer(
         binding.recyclerResults.scrollToPosition(0)
     }
 
+    fun parkResultsFocusForDataSetReset() {
+        resultsGridController?.parkFocusForDataSetReset()
+    }
+
     fun clearPendingFocusAfterLoadMore() {
         resultsGridController?.clearPendingFocusAfterLoadMore()
     }
 
     fun onResultsApplied() {
         binding.recyclerResults.postIfAlive(isAlive = { !released }) {
+            if (maybeConsumePendingFocusFirstResultCardAfterRefresh()) return@postIfAlive
             maybeConsumePendingFocusFirstResultCardFromTabSwitch()
             resultsGridController?.consumePendingFocusAfterLoadMore()
         }
@@ -747,6 +753,29 @@ class SearchRenderer(
         state.pendingFocusFirstResultCardFromTabSwitch = true
         if (!fragment.isResumed) return true
         return maybeConsumePendingFocusFirstResultCardFromTabSwitch()
+    }
+
+    private fun maybeConsumePendingFocusFirstResultCardAfterRefresh(): Boolean {
+        if (!state.pendingFocusFirstResultCardAfterRefresh) return false
+        if (!fragment.isAdded || !fragment.isResumed) return false
+        if (!isResultsVisible()) {
+            state.pendingFocusFirstResultCardAfterRefresh = false
+            return false
+        }
+
+        // Refresh always focuses the first result card; don't let tab-switch focus flags interfere.
+        state.pendingFocusFirstResultCardFromTabSwitch = false
+
+        val recycler = binding.recyclerResults
+        val isUiAlive = { !released && fragment.isAdded && fragment.isResumed && isResultsVisible() }
+        val itemCount = recycler.adapter?.itemCount ?: 0
+        recycler.requestFocusFirstItemOrSelfAfterRefresh(
+            itemCount = itemCount,
+            smoothScroll = false,
+            isAlive = isUiAlive,
+            onDone = { state.pendingFocusFirstResultCardAfterRefresh = false },
+        )
+        return true
     }
 
     private fun maybeConsumePendingFocusFirstResultCardFromTabSwitch(): Boolean {

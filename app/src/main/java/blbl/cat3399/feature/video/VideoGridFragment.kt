@@ -25,6 +25,7 @@ import blbl.cat3399.core.ui.TabSwitchFocusTarget
 import blbl.cat3399.core.ui.postIfAlive
 import blbl.cat3399.core.ui.postIfAttached
 import blbl.cat3399.core.ui.requestFocusAdapterPositionReliable
+import blbl.cat3399.core.ui.requestFocusFirstItemOrSelfAfterRefresh
 import blbl.cat3399.databinding.FragmentVideoGridBinding
 import blbl.cat3399.feature.following.openUpDetailFromVideoCard
 import blbl.cat3399.feature.player.PlayerPlaylistItem
@@ -64,6 +65,7 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
     private var pendingFocusFirstCardFromBackToTab0: Boolean = false
     private var lastFocusedAdapterPosition: Int? = null
     private var dpadGridController: DpadGridController? = null
+    private var pendingFocusFirstCardAfterRefresh: Boolean = false
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentVideoGridBinding.inflate(inflater, container, false)
@@ -182,7 +184,11 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
                     ),
             ).also { it.install() }
 
-        binding.swipeRefresh.setOnRefreshListener { resetAndLoad() }
+        binding.swipeRefresh.setOnRefreshListener {
+            pendingFocusFirstCardAfterRefresh = true
+            dpadGridController?.parkFocusForDataSetReset()
+            resetAndLoad()
+        }
 
         if (preDrawListener == null) {
             preDrawListener =
@@ -212,6 +218,8 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
         val b = _binding ?: return false
         if (!isResumed) return false
         if (b.swipeRefresh.isRefreshing) return true
+        pendingFocusFirstCardAfterRefresh = true
+        dpadGridController?.parkFocusForDataSetReset()
         b.swipeRefresh.isRefreshing = true
         resetAndLoad()
         return true
@@ -313,6 +321,21 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
                 }
                 _binding?.let { b ->
                     b.recycler.postIfAlive(isAlive = { _binding === b && isResumed }) {
+                        if (pendingFocusFirstCardAfterRefresh && applied.isRefresh) {
+                            pendingFocusFirstCardAfterRefresh = false
+                            clearPendingFocusFlags()
+                            val recycler = b.recycler
+                            val isUiAlive = { _binding === b && isResumed }
+                            recycler.requestFocusFirstItemOrSelfAfterRefresh(
+                                itemCount = adapter.itemCount,
+                                smoothScroll = false,
+                                isAlive = isUiAlive,
+                                onDone = { focusedFirstItem ->
+                                    if (focusedFirstItem) lastFocusedAdapterPosition = 0
+                                },
+                            )
+                            return@postIfAlive
+                        }
                         maybeConsumePendingFocusFirstCard()
                         dpadGridController?.consumePendingFocusAfterLoadMore()
                     }

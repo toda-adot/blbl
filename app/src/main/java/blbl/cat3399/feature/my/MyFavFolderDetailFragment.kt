@@ -17,9 +17,9 @@ import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.BackButtonSizingHelper
 import blbl.cat3399.core.ui.DpadGridController
-import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.core.ui.postIfAlive
+import blbl.cat3399.core.ui.requestFocusFirstItemOrSelfAfterRefresh
 import blbl.cat3399.core.ui.setTextSizePxIfChanged
 import blbl.cat3399.core.ui.uiScaler
 import blbl.cat3399.databinding.FragmentMyFavFolderDetailBinding
@@ -162,7 +162,11 @@ class MyFavFolderDetailFragment : Fragment(), RefreshKeyHandler {
                         enableCenterLongPressToLongClick = true,
                     ),
             ).also { it.install() }
-        binding.swipeRefresh.setOnRefreshListener { resetAndLoad() }
+        binding.swipeRefresh.setOnRefreshListener {
+            pendingFocusFirstItem = true
+            dpadGridController?.parkFocusForDataSetReset()
+            resetAndLoad()
+        }
 
         if (savedInstanceState == null) {
             pendingFocusFirstItem = true
@@ -205,11 +209,15 @@ class MyFavFolderDetailFragment : Fragment(), RefreshKeyHandler {
         if (!isResumed) return false
         if (b.swipeRefresh.isRefreshing) return true
         b.swipeRefresh.isRefreshing = true
+        pendingFocusFirstItem = true
+        dpadGridController?.parkFocusForDataSetReset()
         resetAndLoad()
         return true
     }
 
     private fun resetAndLoad() {
+        pendingFocusFirstItem = true
+        dpadGridController?.parkFocusForDataSetReset()
         loadedBvids.clear()
         isLoadingMore = false
         endReached = false
@@ -248,28 +256,14 @@ class MyFavFolderDetailFragment : Fragment(), RefreshKeyHandler {
     private fun maybeFocusFirstItem() {
         if (!pendingFocusFirstItem) return
         if (_binding == null) return
-        if (adapter.itemCount <= 0) return
-
-        val focused = activity?.currentFocus
-        if (focused != null && FocusTreeUtils.isDescendantOf(focused, binding.recycler)) {
-            pendingFocusFirstItem = false
-            return
-        }
-
         val recycler = binding.recycler
-        recycler.postIfAlive(isAlive = { _binding != null }) {
-            val vh = recycler.findViewHolderForAdapterPosition(0)
-            if (vh != null) {
-                vh.itemView.requestFocus()
-                pendingFocusFirstItem = false
-                return@postIfAlive
-            }
-            recycler.scrollToPosition(0)
-            recycler.postIfAlive(isAlive = { _binding != null }) {
-                recycler.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus()
-                pendingFocusFirstItem = false
-            }
-        }
+        val isUiAlive = { _binding != null && isResumed }
+        recycler.requestFocusFirstItemOrSelfAfterRefresh(
+            itemCount = adapter.itemCount,
+            smoothScroll = false,
+            isAlive = isUiAlive,
+            onDone = { pendingFocusFirstItem = false },
+        )
     }
 
     override fun onDestroyView() {

@@ -3,6 +3,7 @@ package blbl.cat3399.feature.tag
 import android.content.Intent
 import android.os.Bundle
 import android.os.SystemClock
+import android.view.KeyEvent
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -13,13 +14,14 @@ import blbl.cat3399.core.api.BiliApiException
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.model.VideoCard
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.tv.RemoteKeys
 import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.BaseActivity
 import blbl.cat3399.core.ui.DpadGridController
-import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.GridSpanPolicy
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.core.ui.cloneInUserScale
+import blbl.cat3399.core.ui.requestFocusFirstItemOrSelfAfterRefresh
 import blbl.cat3399.databinding.ActivityTagDetailBinding
 import blbl.cat3399.feature.following.UpDetailActivity
 import blbl.cat3399.feature.player.PlayerActivity
@@ -176,7 +178,11 @@ class TagDetailActivity : BaseActivity() {
                     ),
             ).also { it.install() }
 
-        binding.swipeRefresh.setOnRefreshListener { resetAndLoad() }
+        binding.swipeRefresh.setOnRefreshListener {
+            pendingFocusFirstItem = true
+            dpadGridController?.parkFocusForDataSetReset()
+            resetAndLoad()
+        }
 
         if (savedInstanceState == null) {
             pendingFocusFirstItem = true
@@ -192,6 +198,18 @@ class TagDetailActivity : BaseActivity() {
         (binding.recycler.layoutManager as? GridLayoutManager)?.spanCount = spanCountForWidth()
     }
 
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && RemoteKeys.isRefreshKey(event.keyCode)) {
+            if (binding.swipeRefresh.isRefreshing) return true
+            pendingFocusFirstItem = true
+            dpadGridController?.parkFocusForDataSetReset()
+            binding.swipeRefresh.isRefreshing = true
+            resetAndLoad()
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onDestroy() {
         dpadGridController?.release()
         dpadGridController = null
@@ -199,6 +217,8 @@ class TagDetailActivity : BaseActivity() {
     }
 
     private fun resetAndLoad() {
+        pendingFocusFirstItem = true
+        dpadGridController?.parkFocusForDataSetReset()
         loadedBvids.clear()
         isLoadingMore = false
         endReached = false
@@ -307,28 +327,14 @@ class TagDetailActivity : BaseActivity() {
 
     private fun maybeFocusFirstItem() {
         if (!pendingFocusFirstItem) return
-        if (adapter.itemCount <= 0) return
-
-        val focused = currentFocus
-        if (focused != null && FocusTreeUtils.isDescendantOf(focused, binding.recycler)) {
-            pendingFocusFirstItem = false
-            return
-        }
-
         val recycler = binding.recycler
-        recycler.post {
-            val vh = recycler.findViewHolderForAdapterPosition(0)
-            if (vh != null) {
-                vh.itemView.requestFocus()
-                pendingFocusFirstItem = false
-                return@post
-            }
-            recycler.scrollToPosition(0)
-            recycler.post {
-                recycler.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() ?: recycler.requestFocus()
-                pendingFocusFirstItem = false
-            }
-        }
+        val isUiAlive = { !isFinishing && !isDestroyed }
+        recycler.requestFocusFirstItemOrSelfAfterRefresh(
+            itemCount = adapter.itemCount,
+            smoothScroll = false,
+            isAlive = isUiAlive,
+            onDone = { pendingFocusFirstItem = false },
+        )
     }
 
     private fun openUpDetailFromVideoCard(card: VideoCard) {

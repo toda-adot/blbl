@@ -21,6 +21,7 @@ class SearchState {
     var currentUserOrder: UserOrder = UserOrder.Default
 
     var pendingFocusFirstResultCardFromTabSwitch: Boolean = false
+    var pendingFocusFirstResultCardAfterRefresh: Boolean = false
     var pendingRestoreMediaPos: Int? = null
 
     var refreshUiToken: Int = 0

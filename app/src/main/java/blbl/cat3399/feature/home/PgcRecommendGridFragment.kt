@@ -22,6 +22,7 @@ import blbl.cat3399.core.ui.TabSwitchFocusTarget
 import blbl.cat3399.core.ui.postIfAlive
 import blbl.cat3399.core.ui.postIfAttached
 import blbl.cat3399.core.ui.requestFocusAdapterPositionReliable
+import blbl.cat3399.core.ui.requestFocusFirstItemOrSelfAfterRefresh
 import blbl.cat3399.databinding.FragmentVideoGridBinding
 import blbl.cat3399.feature.my.BangumiFollowAdapter
 import blbl.cat3399.feature.my.BangumiDetailActivity
@@ -46,6 +47,7 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
     private var initialLoadTriggered: Boolean = false
 
     private var pendingRestorePosition: Int? = null
+    private var pendingFocusFirstCardAfterRefresh: Boolean = false
 
     private var pendingFocusFirstCardFromTab: Boolean = false
     private var pendingFocusFirstCardFromContentSwitch: Boolean = false
@@ -116,7 +118,7 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
             },
         )
 
-        binding.swipeRefresh.setOnRefreshListener { resetAndLoad() }
+        binding.swipeRefresh.setOnRefreshListener { resetAndLoad(fromUserRefresh = true) }
     }
 
     override fun onResume() {
@@ -132,7 +134,7 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
         if (!isResumed) return false
         if (b.swipeRefresh.isRefreshing) return true
         b.swipeRefresh.isRefreshing = true
-        resetAndLoad()
+        resetAndLoad(fromUserRefresh = true)
         return true
     }
 
@@ -256,16 +258,23 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
         }
         if (binding.swipeRefresh.isRefreshing) return
         binding.swipeRefresh.isRefreshing = true
-        resetAndLoad()
+        resetAndLoad(fromUserRefresh = false)
         initialLoadTriggered = true
     }
 
-    private fun resetAndLoad() {
+    private fun resetAndLoad(fromUserRefresh: Boolean = false) {
         isLoadingMore = false
         cursor = null
         hasNext = true
         loadedSeasonIds.clear()
         requestToken++
+        dpadGridController?.clearPendingFocusAfterLoadMore()
+        if (fromUserRefresh) {
+            pendingFocusFirstCardAfterRefresh = true
+            pendingRestorePosition = null
+            clearPendingFocusFlags()
+            dpadGridController?.parkFocusForDataSetReset()
+        }
         adapter.submit(emptyList())
         loadNextPage(isRefresh = true)
     }
@@ -289,9 +298,29 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
                 val filtered = res.items.filter { loadedSeasonIds.add(it.seasonId) }
                 if (isRefresh) adapter.submit(filtered) else adapter.append(filtered)
 
-                _binding?.recycler?.postIfAlive(isAlive = { _binding != null }) {
-                    maybeConsumePendingFocusFirstCard()
-                    dpadGridController?.consumePendingFocusAfterLoadMore()
+                _binding?.let { b ->
+                    b.recycler.postIfAlive(isAlive = { _binding === b && isResumed }) {
+                        if (isRefresh && pendingFocusFirstCardAfterRefresh) {
+                            pendingFocusFirstCardAfterRefresh = false
+                            clearPendingFocusFlags()
+                            pendingRestorePosition = null
+
+                            val recycler = b.recycler
+                            val isUiAlive = { _binding === b && isResumed }
+                            recycler.requestFocusFirstItemOrSelfAfterRefresh(
+                                itemCount = adapter.itemCount,
+                                smoothScroll = false,
+                                isAlive = isUiAlive,
+                                onDone = { focusedFirstItem ->
+                                    if (focusedFirstItem) lastFocusedAdapterPosition = 0
+                                    dpadGridController?.unparkFocusAfterDataSetReset()
+                                },
+                            )
+                            return@postIfAlive
+                        }
+                        maybeConsumePendingFocusFirstCard()
+                        dpadGridController?.consumePendingFocusAfterLoadMore()
+                    }
                 }
                 restoreFocusIfNeeded()
             } catch (t: Throwable) {

@@ -291,6 +291,8 @@
                 android:layout_height="match_parent"
                 android:clipChildren="false"
                 android:clipToPadding="false"
+                android:descendantFocusability="afterDescendants"
+                android:focusable="true"
                 android:paddingTop="10dp" />
         </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 

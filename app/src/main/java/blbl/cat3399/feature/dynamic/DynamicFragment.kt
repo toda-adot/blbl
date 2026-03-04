@@ -19,7 +19,10 @@ import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.GridSpanPolicy
 import blbl.cat3399.core.ui.UiScale
+import blbl.cat3399.core.ui.parkFocusForDataSetReset
+import blbl.cat3399.core.ui.requestFocusFirstItemOrSelfAfterRefresh
 import blbl.cat3399.core.ui.uiScaler
+import blbl.cat3399.core.ui.unparkFocusAfterDataSetReset
 import blbl.cat3399.core.ui.postIfAlive
 import blbl.cat3399.databinding.FragmentDynamicBinding
 import blbl.cat3399.databinding.FragmentDynamicLoginBinding
@@ -61,6 +64,8 @@ class DynamicFragment : Fragment(), RefreshKeyHandler, BackPressHandler {
     private var followRequestToken: Int = 0
     private val loadedFollowMids = HashSet<Long>()
     private var followingListController: DpadGridController? = null
+
+    private var pendingFocusFirstFeedCardAfterRefresh: Boolean = false
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         if (!loggedIn) {
@@ -232,7 +237,11 @@ class DynamicFragment : Fragment(), RefreshKeyHandler, BackPressHandler {
             },
         )
 
-        binding.swipeRefresh.setOnRefreshListener { loadAll(resetFeed = true) }
+        binding.swipeRefresh.setOnRefreshListener {
+            pendingFocusFirstFeedCardAfterRefresh = true
+            parkFocusForDataSetReset(followingListController, dynamicGridController)
+            loadAll(resetFeed = true)
+        }
         binding.swipeRefresh.isRefreshing = true
         loadAll(resetFeed = true)
     }
@@ -401,6 +410,18 @@ class DynamicFragment : Fragment(), RefreshKeyHandler, BackPressHandler {
                 }
                 _binding?.let { b ->
                     b.recyclerDynamic.postIfAlive(isAlive = { _binding === b && isResumed }) {
+                        if (pendingFocusFirstFeedCardAfterRefresh) {
+                            pendingFocusFirstFeedCardAfterRefresh = false
+                            val recycler = b.recyclerDynamic
+                            val isUiAlive = { _binding === b && isResumed }
+                            recycler.requestFocusFirstItemOrSelfAfterRefresh(
+                                itemCount = videoAdapter.itemCount,
+                                smoothScroll = false,
+                                isAlive = isUiAlive,
+                                onDone = { unparkFocusAfterDataSetReset(followingListController, dynamicGridController) },
+                            )
+                            return@postIfAlive
+                        }
                         dynamicGridController?.consumePendingFocusAfterLoadMore()
                     }
                 }
@@ -497,6 +518,8 @@ class DynamicFragment : Fragment(), RefreshKeyHandler, BackPressHandler {
 
         val b = _binding ?: return false
         if (b.swipeRefresh.isRefreshing) return true
+        pendingFocusFirstFeedCardAfterRefresh = true
+        parkFocusForDataSetReset(followingListController, dynamicGridController)
         b.swipeRefresh.isRefreshing = true
         loadAll(resetFeed = true)
         return true
