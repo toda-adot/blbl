@@ -17,6 +17,7 @@ import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.postIfAlive
+import blbl.cat3399.core.ui.requestFocusFirstItemOrSelfAfterRefresh
 import blbl.cat3399.databinding.FragmentVideoGridBinding
 import blbl.cat3399.feature.following.openUpDetailFromVideoCard
 import blbl.cat3399.feature.player.PlayerActivity
@@ -36,6 +37,7 @@ class MyLikeFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler {
     private var initialLoadTriggered: Boolean = false
     private var requestToken: Int = 0
     private var pendingFocusFirstItemFromTabSwitch: Boolean = false
+    private var pendingFocusFirstItemAfterRefresh: Boolean = false
     private var dpadGridController: DpadGridController? = null
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -129,7 +131,11 @@ class MyLikeFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler {
                         enableCenterLongPressToLongClick = true,
                     ),
             ).also { it.install() }
-        binding.swipeRefresh.setOnRefreshListener { reload() }
+        binding.swipeRefresh.setOnRefreshListener {
+            pendingFocusFirstItemAfterRefresh = true
+            dpadGridController?.parkFocusForDataSetReset()
+            reload()
+        }
     }
 
     override fun onResume() {
@@ -144,6 +150,8 @@ class MyLikeFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler {
         if (!isResumed) return false
         if (b.swipeRefresh.isRefreshing) return true
         b.swipeRefresh.isRefreshing = true
+        pendingFocusFirstItemAfterRefresh = true
+        dpadGridController?.parkFocusForDataSetReset()
         reload()
         return true
     }
@@ -210,8 +218,22 @@ class MyLikeFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler {
                 if (mid <= 0L) error("invalid mid")
                 val list = BiliApi.spaceLikeVideoList(vmid = mid)
                 if (token != requestToken) return@launch
+                if (pendingFocusFirstItemAfterRefresh) {
+                    dpadGridController?.parkFocusForDataSetReset()
+                }
                 adapter.submit(list)
                 _binding?.recycler?.postIfAlive(isAlive = { _binding != null }) {
+                    if (pendingFocusFirstItemAfterRefresh) {
+                        pendingFocusFirstItemAfterRefresh = false
+                        val recycler = binding.recycler
+                        val isUiAlive = { _binding != null && isResumed }
+                        recycler.requestFocusFirstItemOrSelfAfterRefresh(
+                            itemCount = adapter.itemCount,
+                            smoothScroll = false,
+                            isAlive = isUiAlive,
+                        )
+                        return@postIfAlive
+                    }
                     maybeConsumePendingFocusFirstItemFromTabSwitch()
                     dpadGridController?.consumePendingFocusAfterLoadMore()
                 }
@@ -219,7 +241,16 @@ class MyLikeFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler {
                 if (t is CancellationException) throw t
                 AppLog.e("MyLike", "load failed", t)
                 val isPrivate = (t as? BiliApiException)?.apiCode == 53013
-                if (isPrivate && token == requestToken) adapter.submit(emptyList())
+                if (isPrivate && token == requestToken) {
+                    if (pendingFocusFirstItemAfterRefresh) {
+                        dpadGridController?.parkFocusForDataSetReset()
+                    }
+                    adapter.submit(emptyList())
+                    pendingFocusFirstItemAfterRefresh = false
+                    _binding?.recycler?.postIfAlive(isAlive = { _binding != null && isResumed }) {
+                        binding.recycler.requestFocus()
+                    }
+                }
                 context?.let {
                     AppToast.show(it, if (isPrivate) "点赞列表未公开" else "加载失败，可查看 Logcat(标签 BLBL)")
                 }

@@ -25,6 +25,7 @@ import blbl.cat3399.core.ui.postDelayedIfAlive
 import blbl.cat3399.core.ui.postIfAlive
 import blbl.cat3399.core.ui.postIfAttached
 import blbl.cat3399.core.ui.requestFocusAdapterPositionReliable
+import blbl.cat3399.core.ui.requestFocusFirstItemOrSelfAfterRefresh
 import blbl.cat3399.databinding.FragmentLiveGridBinding
 import blbl.cat3399.ui.RefreshKeyHandler
 import kotlinx.coroutines.CancellationException
@@ -48,6 +49,7 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
     private var pendingFocusFirstCardFromTab: Boolean = false
     private var pendingFocusFirstCardFromContentSwitch: Boolean = false
     private var pendingFocusFirstCardFromBackToTab0: Boolean = false
+    private var pendingFocusFirstCardAfterRefresh: Boolean = false
     private var lastFocusedAdapterPosition: Int? = null
     private var dpadGridController: DpadGridController? = null
     private var pendingRestorePosition: Int? = null
@@ -143,7 +145,7 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
                     ),
             ).also { it.install() }
 
-        binding.swipeRefresh.setOnRefreshListener { resetAndLoad() }
+        binding.swipeRefresh.setOnRefreshListener { resetAndLoad(fromUserRefresh = true) }
     }
 
     override fun onResume() {
@@ -159,7 +161,7 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
         if (!isResumed) return false
         if (b.swipeRefresh.isRefreshing) return true
         b.swipeRefresh.isRefreshing = true
-        resetAndLoad()
+        resetAndLoad(fromUserRefresh = true)
         return true
     }
 
@@ -172,11 +174,18 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
         }
         if (binding.swipeRefresh.isRefreshing) return
         binding.swipeRefresh.isRefreshing = true
-        resetAndLoad()
+        resetAndLoad(fromUserRefresh = false)
         initialLoadTriggered = true
     }
 
-    private fun resetAndLoad() {
+    private fun resetAndLoad(fromUserRefresh: Boolean = false) {
+        if (fromUserRefresh) {
+            pendingFocusFirstCardAfterRefresh = true
+            pendingRestorePosition = null
+            pendingRestoreAttemptsLeft = 0
+            clearPendingFocusFlags()
+            dpadGridController?.parkFocusForDataSetReset()
+        }
         paging.reset()
         loadedRoomIds.clear()
         loadNextPage(isRefresh = true)
@@ -234,6 +243,25 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
                 }
                 _binding?.let { b ->
                     b.recycler.postIfAlive(isAlive = { _binding === b && isResumed }) {
+                        if (pendingFocusFirstCardAfterRefresh && applied.isRefresh) {
+                            pendingFocusFirstCardAfterRefresh = false
+                            clearPendingFocusFlags()
+                            pendingRestorePosition = null
+                            pendingRestoreAttemptsLeft = 0
+
+                            val recycler = b.recycler
+                            val isUiAlive = { _binding === b && isResumed }
+                            recycler.requestFocusFirstItemOrSelfAfterRefresh(
+                                itemCount = adapter.itemCount,
+                                smoothScroll = false,
+                                isAlive = isUiAlive,
+                                onDone = { focusedFirstItem ->
+                                    if (focusedFirstItem) lastFocusedAdapterPosition = 0
+                                    dpadGridController?.unparkFocusAfterDataSetReset()
+                                },
+                            )
+                            return@postIfAlive
+                        }
                         restoreFocusIfNeeded()
                         maybeConsumePendingFocusFirstCard()
                         dpadGridController?.consumePendingFocusAfterLoadMore()

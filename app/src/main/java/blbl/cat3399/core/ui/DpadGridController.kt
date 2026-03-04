@@ -260,6 +260,34 @@ internal class DpadGridController(
         unparkFocusInRecyclerViewIfNeeded()
     }
 
+    /**
+     * When a page is being refreshed, some implementations reset their adapter (e.g. submit(emptyList())
+     * then submit(newItems)). If focus is currently on a child item, the framework can fall back to an
+     * unrelated container (often the sidebar/avatar) during the brief detach/rebind window.
+     *
+     * This method proactively parks focus on this RecyclerView to keep focus inside the content area.
+     *
+     * Notes:
+     * - This will NOT steal focus from other containers (only works when focus is already inside this
+     *   RecyclerView, or focus is currently null).
+     * - Descendant focusability is restored immediately after focus is captured (no long-lived override).
+     */
+    fun parkFocusForDataSetReset() {
+        // Reuse the same implementation as load-more focus parking, but don't keep the descendant
+        // focusability overridden: we only need to capture focus for one frame.
+        parkFocusInRecyclerViewForLoadMore(keepDescendantFocusabilityOverridden = false)
+    }
+
+    /**
+     * Restore descendant focusability if it was temporarily overridden by [parkFocusForDataSetReset].
+     *
+     * Typically not necessary because [parkFocusForDataSetReset] restores immediately once focus is
+     * captured, but keeping this public makes call-sites resilient if the internal behavior changes.
+     */
+    fun unparkFocusAfterDataSetReset() {
+        unparkFocusInRecyclerViewIfNeeded()
+    }
+
     fun consumePendingFocusAfterLoadMore(): Boolean {
         val anchorPos = pendingFocusAfterLoadMoreAnchorPos
         if (anchorPos == RecyclerView.NO_POSITION) return false

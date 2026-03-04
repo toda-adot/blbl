@@ -18,6 +18,7 @@ import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.postIfAlive
+import blbl.cat3399.core.ui.requestFocusFirstItemOrSelfAfterRefresh
 import blbl.cat3399.databinding.FragmentVideoGridBinding
 import blbl.cat3399.ui.RefreshKeyHandler
 import kotlinx.coroutines.CancellationException
@@ -35,6 +36,7 @@ class MyBangumiFollowFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHa
     private var pendingRestorePosition: Int? = null
     private var pendingFocusFirstItemFromTabSwitch: Boolean = false
     private var pendingRefreshAfterDetail: Boolean = false
+    private var pendingFocusFirstItemAfterRefresh: Boolean = false
     private var dpadGridController: DpadGridController? = null
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -107,7 +109,7 @@ class MyBangumiFollowFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHa
                 }
             },
         )
-        binding.swipeRefresh.setOnRefreshListener { resetAndLoad() }
+        binding.swipeRefresh.setOnRefreshListener { resetAndLoad(fromUserRefresh = true) }
     }
 
     override fun onResume() {
@@ -124,7 +126,7 @@ class MyBangumiFollowFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHa
         if (!isResumed) return false
         if (b.swipeRefresh.isRefreshing) return true
         b.swipeRefresh.isRefreshing = true
-        resetAndLoad()
+        resetAndLoad(fromUserRefresh = true)
         return true
     }
 
@@ -185,7 +187,7 @@ class MyBangumiFollowFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHa
         }
         if (binding.swipeRefresh.isRefreshing) return
         binding.swipeRefresh.isRefreshing = true
-        resetAndLoad()
+        resetAndLoad(fromUserRefresh = false)
         initialLoadTriggered = true
     }
 
@@ -196,12 +198,19 @@ class MyBangumiFollowFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHa
         val b = _binding ?: return
         if (b.swipeRefresh.isRefreshing) return
         b.swipeRefresh.isRefreshing = true
-        resetAndLoad()
+        resetAndLoad(fromUserRefresh = false)
     }
 
-    private fun resetAndLoad() {
+    private fun resetAndLoad(fromUserRefresh: Boolean = false) {
+        if (fromUserRefresh) {
+            pendingFocusFirstItemAfterRefresh = true
+            pendingRefreshAfterDetail = false
+            pendingRestorePosition = null
+            pendingFocusFirstItemFromTabSwitch = false
+        }
         paging.reset()
         dpadGridController?.clearPendingFocusAfterLoadMore()
+        dpadGridController?.parkFocusForDataSetReset()
         adapter.submit(emptyList())
         loadNextPage(isRefresh = true)
     }
@@ -248,11 +257,31 @@ class MyBangumiFollowFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHa
                     )
 
                 val applied = result.appliedOrNull() ?: return@launch
-                if (applied.items.isEmpty()) return@launch
-                if (applied.isRefresh) adapter.submit(applied.items) else adapter.append(applied.items)
-                _binding?.recycler?.postIfAlive(isAlive = { _binding != null }) {
-                    maybeConsumePendingFocusFirstItemFromTabSwitch()
-                    dpadGridController?.consumePendingFocusAfterLoadMore()
+                if (applied.isRefresh) {
+                    adapter.submit(applied.items)
+                } else if (applied.items.isNotEmpty()) {
+                    adapter.append(applied.items)
+                }
+                _binding?.let { b ->
+                    b.recycler.postIfAlive(isAlive = { _binding === b && isResumed }) {
+                        if (isRefresh && pendingFocusFirstItemAfterRefresh) {
+                            pendingFocusFirstItemAfterRefresh = false
+                            pendingFocusFirstItemFromTabSwitch = false
+                            pendingRestorePosition = null
+
+                            val recycler = b.recycler
+                            val isUiAlive = { _binding === b && isResumed }
+                            recycler.requestFocusFirstItemOrSelfAfterRefresh(
+                                itemCount = adapter.itemCount,
+                                smoothScroll = false,
+                                isAlive = isUiAlive,
+                                onDone = { dpadGridController?.unparkFocusAfterDataSetReset() },
+                            )
+                            return@postIfAlive
+                        }
+                        maybeConsumePendingFocusFirstItemFromTabSwitch()
+                        dpadGridController?.consumePendingFocusAfterLoadMore()
+                    }
                 }
                 restoreFocusIfNeeded()
             } catch (t: Throwable) {

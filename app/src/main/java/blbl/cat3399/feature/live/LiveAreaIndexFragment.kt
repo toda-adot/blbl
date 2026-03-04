@@ -18,6 +18,7 @@ import blbl.cat3399.core.ui.GridSpanPolicy
 import blbl.cat3399.core.ui.postIfAlive
 import blbl.cat3399.core.ui.postIfAttached
 import blbl.cat3399.core.ui.requestFocusAdapterPositionReliable
+import blbl.cat3399.core.ui.requestFocusFirstItemOrSelfAfterRefresh
 import blbl.cat3399.databinding.FragmentLiveGridBinding
 import blbl.cat3399.ui.RefreshKeyHandler
 import kotlinx.coroutines.CancellationException
@@ -40,6 +41,7 @@ class LiveAreaIndexFragment : Fragment(), LivePageFocusTarget, LivePageReturnFoc
     private var pendingFocusFirstCardFromBackToTab0: Boolean = false
     private var lastFocusedAdapterPosition: Int? = null
     private var pendingRestorePosition: Int? = null
+    private var pendingFocusFirstCardAfterRefresh: Boolean = false
     private var dpadGridController: DpadGridController? = null
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -99,7 +101,13 @@ class LiveAreaIndexFragment : Fragment(), LivePageFocusTarget, LivePageReturnFoc
                         isEnabled = { _binding != null && isResumed },
                     ),
             ).also { it.install() }
-        binding.swipeRefresh.setOnRefreshListener { reload(force = true) }
+        binding.swipeRefresh.setOnRefreshListener {
+            pendingFocusFirstCardAfterRefresh = true
+            pendingRestorePosition = null
+            clearPendingFocusFlags()
+            dpadGridController?.parkFocusForDataSetReset()
+            reload(force = true)
+        }
     }
 
     override fun onResume() {
@@ -114,6 +122,10 @@ class LiveAreaIndexFragment : Fragment(), LivePageFocusTarget, LivePageReturnFoc
         val b = _binding ?: return false
         if (!isResumed) return false
         if (b.swipeRefresh.isRefreshing) return true
+        pendingFocusFirstCardAfterRefresh = true
+        pendingRestorePosition = null
+        clearPendingFocusFlags()
+        dpadGridController?.parkFocusForDataSetReset()
         b.swipeRefresh.isRefreshing = true
         reload(force = true)
         return true
@@ -145,9 +157,29 @@ class LiveAreaIndexFragment : Fragment(), LivePageFocusTarget, LivePageReturnFoc
                         ?.filter { it.id > 0 && it.name.isNotBlank() }
                         .orEmpty()
                 adapter.submit(children)
-                _binding?.recycler?.postIfAlive(isAlive = { _binding != null }) {
-                    restoreFocusIfNeeded()
-                    maybeConsumePendingFocusFirstCard()
+                _binding?.let { b ->
+                    b.recycler.postIfAlive(isAlive = { _binding === b && isResumed }) {
+                        if (pendingFocusFirstCardAfterRefresh) {
+                            pendingFocusFirstCardAfterRefresh = false
+                            clearPendingFocusFlags()
+                            pendingRestorePosition = null
+
+                            val recycler = b.recycler
+                            val isUiAlive = { _binding === b && isResumed }
+                            recycler.requestFocusFirstItemOrSelfAfterRefresh(
+                                itemCount = adapter.itemCount,
+                                smoothScroll = false,
+                                isAlive = isUiAlive,
+                                onDone = { focusedFirstItem ->
+                                    if (focusedFirstItem) lastFocusedAdapterPosition = 0
+                                    dpadGridController?.unparkFocusAfterDataSetReset()
+                                },
+                            )
+                            return@postIfAlive
+                        }
+                        restoreFocusIfNeeded()
+                        maybeConsumePendingFocusFirstCard()
+                    }
                 }
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t

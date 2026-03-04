@@ -95,6 +95,7 @@ class UpDetailActivity : BaseActivity() {
 
     private var pendingFocusFirstArchiveItemAfterLoad: Boolean = false
     private var pendingFocusFirstSectionItemAfterLoad: Boolean = false
+    private var forceFocusFirstContentAfterRefresh: Boolean = false
     private var archiveGridController: DpadGridController? = null
     private var focusListener: android.view.ViewTreeObserver.OnGlobalFocusChangeListener? = null
     private var didRequestInitialTab0Focus: Boolean = false
@@ -463,7 +464,15 @@ class UpDetailActivity : BaseActivity() {
 
     private fun refreshCurrentTab(initial: Boolean = false) {
         if (!initial) {
+            forceFocusFirstContentAfterRefresh = true
             binding.swipeRefresh.isRefreshing = true
+        }
+        // Avoid framework fallback focus during adapter resets.
+        if (forceFocusFirstContentAfterRefresh) {
+            when (currentTab) {
+                UpTab.ARCHIVE -> archiveGridController?.parkFocusForDataSetReset()
+                UpTab.COLLECTION_SERIES -> parkFocusInRecyclerForDataSetReset()
+            }
         }
         loadHeader()
         when (currentTab) {
@@ -610,9 +619,14 @@ class UpDetailActivity : BaseActivity() {
     }
 
     private fun resetAndLoadArchive() {
-        val focused = currentFocus
-        if (focused != null && focused != binding.recycler && FocusTreeUtils.isDescendantOf(focused, binding.recycler)) {
+        if (forceFocusFirstContentAfterRefresh) {
             pendingFocusFirstArchiveItemAfterLoad = true
+            archiveGridController?.parkFocusForDataSetReset()
+        } else {
+            val focused = currentFocus
+            if (focused != null && focused != binding.recycler && FocusTreeUtils.isDescendantOf(focused, binding.recycler)) {
+                pendingFocusFirstArchiveItemAfterLoad = true
+            }
         }
         archiveRequestToken++
         loadedArchiveBvids.clear()
@@ -662,9 +676,14 @@ class UpDetailActivity : BaseActivity() {
     }
 
     private fun resetAndLoadSeasonsSeries() {
-        val focused = currentFocus
-        if (focused != null && focused != binding.recycler && FocusTreeUtils.isDescendantOf(focused, binding.recycler)) {
+        if (forceFocusFirstContentAfterRefresh) {
             pendingFocusFirstSectionItemAfterLoad = true
+            parkFocusInRecyclerForDataSetReset()
+        } else {
+            val focused = currentFocus
+            if (focused != null && focused != binding.recycler && FocusTreeUtils.isDescendantOf(focused, binding.recycler)) {
+                pendingFocusFirstSectionItemAfterLoad = true
+            }
         }
         seasonsSeriesRequestToken++
         seasonsSeriesNextPage = 1
@@ -1114,28 +1133,43 @@ class UpDetailActivity : BaseActivity() {
     private fun maybeConsumePendingFocusFirstContentAfterLoad() {
         if (!hasWindowFocus()) return
 
-        val focused = currentFocus
-        if (focused != null && focused != binding.recycler && FocusTreeUtils.isDescendantOf(focused, binding.recycler)) {
-            pendingFocusFirstArchiveItemAfterLoad = false
-            pendingFocusFirstSectionItemAfterLoad = false
-            return
+        val force = forceFocusFirstContentAfterRefresh
+        if (!force) {
+            val focused = currentFocus
+            if (focused != null && focused != binding.recycler && FocusTreeUtils.isDescendantOf(focused, binding.recycler)) {
+                pendingFocusFirstArchiveItemAfterLoad = false
+                pendingFocusFirstSectionItemAfterLoad = false
+                return
+            }
         }
 
         when (currentTab) {
             UpTab.ARCHIVE -> {
-                if (!pendingFocusFirstArchiveItemAfterLoad) return
+                if (!force && !pendingFocusFirstArchiveItemAfterLoad) return
                 if (archiveAdapter.itemCount <= 0) return
                 pendingFocusFirstArchiveItemAfterLoad = false
+                forceFocusFirstContentAfterRefresh = false
                 focusGridAt(0)
             }
 
             UpTab.COLLECTION_SERIES -> {
-                if (!pendingFocusFirstSectionItemAfterLoad) return
+                if (!force && !pendingFocusFirstSectionItemAfterLoad) return
                 if (seasonsSeriesSections.isEmpty()) return
                 pendingFocusFirstSectionItemAfterLoad = false
+                forceFocusFirstContentAfterRefresh = false
                 focusFirstSectionVideo()
             }
         }
+    }
+
+    private fun parkFocusInRecyclerForDataSetReset() {
+        val focused = currentFocus
+        if (focused != null && focused != binding.recycler && !FocusTreeUtils.isDescendantOf(focused, binding.recycler)) return
+        val recycler = binding.recycler
+        val original = recycler.descendantFocusability
+        recycler.descendantFocusability = ViewGroup.FOCUS_BEFORE_DESCENDANTS
+        recycler.requestFocus()
+        recycler.descendantFocusability = original
     }
 
     private fun installArchiveGridController() {
