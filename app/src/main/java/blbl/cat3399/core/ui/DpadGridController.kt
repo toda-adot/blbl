@@ -601,7 +601,7 @@ internal class DpadGridController(
 
         if (recyclerView.canScrollVertically(1)) {
             val dy = (rootItem.height * config.scrollOnDownEdgeFactor).toInt().coerceAtLeast(1)
-            recyclerView.smoothScrollBy(0, dy)
+            recyclerView.scrollBy(0, dy)
             val adapter = recyclerView.adapter
             val itemCount = adapter?.itemCount ?: 0
             val spanCount = spanCountForLayoutManager()
@@ -651,7 +651,7 @@ internal class DpadGridController(
                     .takeIf { it > 0 }
                     ?: (recyclerView.height.takeIf { it > 0 }?.div(2) ?: 1)
             val dy = (base * config.scrollOnDownEdgeFactor).toInt().coerceAtLeast(1)
-            recyclerView.smoothScrollBy(0, dy)
+            recyclerView.scrollBy(0, dy)
             recyclerView.postIfAlive(
                 isAlive = { installed && recyclerView.isAttachedToWindow && config.isEnabled() },
             ) {
