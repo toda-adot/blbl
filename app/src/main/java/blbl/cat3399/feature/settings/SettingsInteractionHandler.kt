@@ -1289,19 +1289,12 @@ class SettingsInteractionHandler(
             private val tvLabel: TextView = itemView.findViewById(blbl.cat3399.R.id.tv_label)
             private val tvCheck: TextView = itemView.findViewById(blbl.cat3399.R.id.tv_check)
 
-            fun bind(label: String, position: Int, itemCount: Int, onClick: () -> Unit) {
+            fun bind(label: String, onClick: () -> Unit) {
                 tvLabel.text = label
                 tvCheck.visibility = View.GONE
                 itemView.setOnClickListener { onClick() }
                 itemView.setOnKeyListener { _, keyCode, event ->
                     when (keyCode) {
-                        KeyEvent.KEYCODE_DPAD_LEFT,
-                        KeyEvent.KEYCODE_DPAD_RIGHT,
-                        -> true
-
-                        KeyEvent.KEYCODE_DPAD_UP -> position <= 0
-                        KeyEvent.KEYCODE_DPAD_DOWN -> position >= (itemCount - 1)
-
                         KeyEvent.KEYCODE_DPAD_CENTER,
                         KeyEvent.KEYCODE_ENTER,
                         KeyEvent.KEYCODE_NUMPAD_ENTER,
@@ -1332,8 +1325,6 @@ class SettingsInteractionHandler(
                 val item = list.getOrNull(position) ?: return
                 holder.bind(
                     label = bindingLabel(item),
-                    position = position,
-                    itemCount = list.size,
                     onClick = { onItemClick(item) },
                 )
             }

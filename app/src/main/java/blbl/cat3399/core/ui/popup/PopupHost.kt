@@ -50,6 +50,14 @@ internal class PopupHost private constructor(
     private var focusParkingView: View? = null
     private var focusParkingListener: ViewTreeObserver.OnGlobalFocusChangeListener? = null
 
+    private data class FocusabilitySnapshot(
+        val descendantFocusability: Int?,
+        val isFocusable: Boolean,
+        val isFocusableInTouchMode: Boolean,
+    )
+
+    private var underlyingFocusSnapshots: LinkedHashMap<View, FocusabilitySnapshot>? = null
+
     private data class ModalEntry(
         val rootView: View,
         val cancelable: Boolean,
@@ -62,6 +70,37 @@ internal class PopupHost private constructor(
         val onRestoreFocus: (() -> Boolean)?,
         var dismissing: Boolean = false,
     )
+
+    private fun blockUnderlyingFocus() {
+        if (underlyingFocusSnapshots != null) return
+        val snapshots = LinkedHashMap<View, FocusabilitySnapshot>()
+        for (i in 0 until contentRoot.childCount) {
+            val child = contentRoot.getChildAt(i) ?: continue
+            if (child === hostView) continue
+            snapshots[child] =
+                FocusabilitySnapshot(
+                    descendantFocusability = (child as? ViewGroup)?.descendantFocusability,
+                    isFocusable = child.isFocusable,
+                    isFocusableInTouchMode = child.isFocusableInTouchMode,
+                )
+            (child as? ViewGroup)?.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+            child.isFocusable = false
+            child.isFocusableInTouchMode = false
+        }
+        underlyingFocusSnapshots = snapshots
+    }
+
+    private fun restoreUnderlyingFocus() {
+        val snapshots = underlyingFocusSnapshots ?: return
+        underlyingFocusSnapshots = null
+        for ((view, snap) in snapshots) {
+            (view as? ViewGroup)?.let { vg ->
+                snap.descendantFocusability?.let { vg.descendantFocusability = it }
+            }
+            view.isFocusable = snap.isFocusable
+            view.isFocusableInTouchMode = snap.isFocusableInTouchMode
+        }
+    }
 
     private fun ensureFocusParkingView(): View {
         val existing = focusParkingView
@@ -148,6 +187,12 @@ internal class PopupHost private constructor(
         onRestoreFocus: (() -> Boolean)? = null,
     ): PopupHandle {
         checkMainThread()
+
+        // Prevent focus search from escaping into the underlying UI (common on TV / DPAD devices,
+        // especially older Android versions). Without this, pressing DPAD can momentarily focus
+        // a control behind the modal and then get pulled back by the focus trap, visible as a
+        // "focus flash" in the background.
+        blockUnderlyingFocus()
 
         // When a modal triggers another modal (i.e. we replace the currently visible modal),
         // preserve the original FocusReturn target so the final dismiss restores focus back to
@@ -416,6 +461,12 @@ internal class PopupHost private constructor(
             }
             runCatching { entry.backCallback.remove() }
             runCatching { contentRoot.viewTreeObserver.removeOnGlobalFocusChangeListener(entry.focusListener) }
+
+            if (restoreFocus) {
+                // Re-enable underlying focusability before invoking callbacks or restoring focus.
+                // Some dismiss callbacks refresh the underlying UI and may request focus.
+                restoreUnderlyingFocus()
+            }
 
             // Invoke callbacks before restoring focus to avoid causing a focus "double jump" when
             // the underlying UI updates (e.g. list refresh) and would otherwise temporarily lose focus.
