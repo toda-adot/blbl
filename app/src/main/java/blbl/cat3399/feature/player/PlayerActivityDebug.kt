@@ -128,6 +128,19 @@ private fun PlayerActivity.buildDebugText(exo: ExoPlayer): String {
     }
 
     sb.append("decoder=").append(shortenDebugValue(debug.videoDecoderName ?: "-", maxChars = 64))
+    val brBps =
+        trackFormat
+            ?.let { f ->
+                f.averageBitrate.takeIf { it > 0 }
+                    ?: f.bitrate.takeIf { it > 0 }
+                    ?: f.peakBitrate.takeIf { it > 0 }
+            }
+            ?.toDouble()
+    if (brBps != null) {
+        sb.append(" br=").append(String.format(Locale.US, "%.1f", brBps / 1000.0)).append("kbps")
+    } else {
+        sb.append(" br=-")
+    }
     sb.append('\n')
 
     sb.append("dropped=").append(debug.droppedFramesTotal)
