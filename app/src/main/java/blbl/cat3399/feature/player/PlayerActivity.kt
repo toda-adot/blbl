@@ -294,6 +294,24 @@ class PlayerActivity : BaseActivity() {
     private var playUrlAutoRefreshToken: Int = 0
     private var playUrlAutoRefreshLastReloadAtElapsedMs: Long = 0L
 
+    private fun isPlayerTeardownInProgress(): Boolean {
+        return exitCleanupRequested || isFinishing || isDestroyed || decoderReleaseRequestedOnStopReason != null || resumeAfterDecoderRelease
+    }
+
+    private fun shouldSuppressPlayerError(error: Throwable): Boolean {
+        if (!isPlayerTeardownInProgress()) return false
+        val playbackException = error as? PlaybackException
+        val errorLabel = playbackException?.errorCodeName ?: (error.message ?: error::class.java.simpleName)
+        trace?.log("player:error:ignored", "type=$errorLabel teardown=1")
+        AppLog.i(
+            "Player",
+            "ignorePlayerError teardown=1 finishing=${if (isFinishing) 1 else 0} destroyed=${if (isDestroyed) 1 else 0} " +
+                "exitCleanup=${if (exitCleanupRequested) 1 else 0} releaseOnStop=${decoderReleaseRequestedOnStopReason.orEmpty()} " +
+                "resumeAfterRelease=${if (resumeAfterDecoderRelease) 1 else 0} type=$errorLabel",
+        )
+        return true
+    }
+
     private fun exitTraceStart(trigger: String) {
         if (exitTraceStartAtMs != 0L) return
         val now = SystemClock.elapsedRealtime()
@@ -761,6 +779,7 @@ class PlayerActivity : BaseActivity() {
         engine.addListener(
             object : BlblPlayerEngine.Listener {
                 override fun onPlayerError(error: Throwable) {
+                    if (shouldSuppressPlayerError(error)) return
                     AppLog.e("Player", "onPlayerError", error)
                     val playbackException = error as? PlaybackException
                     if (playbackException != null) {

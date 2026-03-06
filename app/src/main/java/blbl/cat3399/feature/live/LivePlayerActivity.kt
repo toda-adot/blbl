@@ -92,6 +92,7 @@ class LivePlayerActivity : BaseActivity() {
     private var behindLiveWindowWindowStartAtMs: Long = 0L
     private var behindLiveWindowRecoverCount: Int = 0
     private var behindLiveWindowLastRecoverAtMs: Long = 0L
+    private var exitRequested: Boolean = false
 
     private val doubleBackToExit by lazy {
         DoubleBackToExitHandler(context = this, windowMs = BACK_DOUBLE_PRESS_WINDOW_MS) {
@@ -188,6 +189,7 @@ class LivePlayerActivity : BaseActivity() {
         engine.addListener(
             object : BlblPlayerEngine.Listener {
                 override fun onPlayerError(error: Throwable) {
+                    if (shouldSuppressPlayerError(error)) return
                     AppLog.e("LivePlayer", "onPlayerError", error)
                     val playbackException = error as? PlaybackException
                     if (playbackException != null && tryRecoverBehindLiveWindow(playbackException)) return
@@ -295,6 +297,10 @@ class LivePlayerActivity : BaseActivity() {
     }
 
     override fun finish() {
+        exitRequested = true
+        autoFailoverJob?.cancel()
+        autoFailoverInFlight = false
+        runCatching { player?.pause() }
         if (::binding.isInitialized) {
             binding.playerView.player = null
         }
@@ -882,6 +888,22 @@ class LivePlayerActivity : BaseActivity() {
             -> true
             else -> false
         }
+    }
+
+    private fun isPlayerTeardownInProgress(): Boolean {
+        return exitRequested || isFinishing || isDestroyed
+    }
+
+    private fun shouldSuppressPlayerError(error: Throwable): Boolean {
+        if (!isPlayerTeardownInProgress()) return false
+        val playbackException = error as? PlaybackException
+        val errorLabel = playbackException?.errorCodeName ?: (error.message ?: error::class.java.simpleName)
+        AppLog.i(
+            "LivePlayer",
+            "ignorePlayerError teardown=1 finishing=${if (isFinishing) 1 else 0} destroyed=${if (isDestroyed) 1 else 0} " +
+                "exitRequested=${if (exitRequested) 1 else 0} type=$errorLabel",
+        )
+        return true
     }
 
     private fun shouldAutoFailoverOnError(error: PlaybackException): Boolean {
