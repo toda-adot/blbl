@@ -241,7 +241,7 @@ internal fun PlayerActivity.startPlayback(
                         ?: safeBvid
                 if (resolvedBvid.isNotBlank()) currentBvid = resolvedBvid
 
-                val cid = viewData.optLong("cid").takeIf { it > 0 } ?: cidExtra ?: error("cid missing")
+                val cid = cidExtra ?: viewData.optLong("cid").takeIf { it > 0 } ?: error("cid missing")
                 val aid = viewData.optLong("aid").takeIf { it > 0 }
                 currentAid = currentAid ?: aid ?: safeAid
                 currentCid = cid
