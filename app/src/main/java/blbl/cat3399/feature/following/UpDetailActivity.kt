@@ -198,9 +198,6 @@ class UpDetailActivity : BaseActivity() {
 
     private fun setupHeaderButtons() {
         binding.btnBack.setOnClickListener { finish() }
-        // Some TV boxes keep the window in touch-mode longer than expected; allow requestFocus()
-        // to succeed when we route focus via DPAD handlers.
-        binding.btnBack.isFocusableInTouchMode = true
         binding.btnBack.setOnKeyListener { _, keyCode, event ->
             if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
             if (keyCode != KeyEvent.KEYCODE_DPAD_DOWN) return@setOnKeyListener false
