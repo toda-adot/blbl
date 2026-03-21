@@ -745,12 +745,13 @@ class PlayerActivity : BaseActivity() {
                 area = prefs.danmakuArea,
             ),
             debugEnabled = prefs.playerDebugEnabled,
+            engineKind = PlayerEngineKind.fromPrefValue(prefs.playerEngineKind),
         )
         if (sessionOverrideJson != null) {
             session = session.restoreFromEngineSwitchJsonString(sessionOverrideJson)
         }
 
-        val desiredEngineKind = PlayerEngineKind.fromPrefValue(prefs.playerEngineKind)
+        val desiredEngineKind = session.engineKind
         val engineKind =
             if (desiredEngineKind == PlayerEngineKind.IjkPlayer && !IjkPlayerPlugin.isInstalled(this)) {
                 AppToast.showLong(this, "IjkPlayer 插件未安装，已回退到 ExoPlayer")
@@ -758,6 +759,9 @@ class PlayerActivity : BaseActivity() {
             } else {
                 desiredEngineKind
             }
+        if (session.engineKind != engineKind) {
+            session = session.copy(engineKind = engineKind)
+        }
         val engine: BlblPlayerEngine =
             when (engineKind) {
                 PlayerEngineKind.IjkPlayer -> {

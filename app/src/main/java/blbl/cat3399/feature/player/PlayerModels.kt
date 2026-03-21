@@ -1,6 +1,7 @@
 package blbl.cat3399.feature.player
 
 import blbl.cat3399.feature.player.danmaku.DanmakuSessionSettings
+import blbl.cat3399.feature.player.engine.PlayerEngineKind
 import org.json.JSONObject
 
 data class SegmentMark(
@@ -133,6 +134,7 @@ internal data class PlayerSessionSettings(
     val subtitleBackgroundOpacity: Float,
     val danmaku: DanmakuSessionSettings,
     val debugEnabled: Boolean,
+    val engineKind: PlayerEngineKind,
 )
 
 internal fun PlayerSessionSettings.toEngineSwitchJsonString(): String {
@@ -157,6 +159,7 @@ internal fun PlayerSessionSettings.toEngineSwitchJsonString(): String {
             put("danmakuSpeedLevel", danmaku.speedLevel)
             put("danmakuArea", danmaku.area.toDouble())
             put("debugEnabled", debugEnabled)
+            put("engineKind", engineKind.prefValue)
         }
     return obj.toString()
 }
@@ -202,6 +205,7 @@ internal fun PlayerSessionSettings.restoreFromEngineSwitchJsonString(raw: String
     val danSpeed = optInt("danmakuSpeedLevel", danmaku.speedLevel).coerceIn(1, 10)
     val danArea = optFloat("danmakuArea", danmaku.area).coerceIn(0.05f, 1.0f)
     val dbg = obj.optBoolean("debugEnabled", debugEnabled)
+    val restoredEngineKind = PlayerEngineKind.fromPrefValue(obj.optString("engineKind", engineKind.prefValue))
 
     return copy(
         playbackSpeed = speed,
@@ -225,5 +229,6 @@ internal fun PlayerSessionSettings.restoreFromEngineSwitchJsonString(raw: String
                 area = danArea,
             ),
         debugEnabled = dbg,
+        engineKind = restoredEngineKind,
     )
 }

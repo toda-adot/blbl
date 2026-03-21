@@ -215,7 +215,7 @@ internal fun PlayerActivity.refreshSettings(adapter: PlayerSettingsAdapter) {
 }
 
 private fun PlayerActivity.playerEngineSubtitle(): String {
-    val kind = player?.kind ?: PlayerEngineKind.fromPrefValue(BiliClient.prefs.playerEngineKind)
+    val kind = player?.kind ?: session.engineKind
     return when (kind) {
         PlayerEngineKind.IjkPlayer -> "IjkPlayer"
         PlayerEngineKind.ExoPlayer -> "ExoPlayer"
@@ -224,12 +224,10 @@ private fun PlayerActivity.playerEngineSubtitle(): String {
 
 private fun PlayerActivity.restartForEngineSwitch(picked: PlayerEngineKind) {
     val engine = player ?: return
-    val prefs = BiliClient.prefs
-    prefs.playerEngineKind = picked.prefValue
 
     val resumePosMs = engine.currentPosition.coerceAtLeast(0L)
     val resumePlayWhenReady = engine.playWhenReady
-    val sessionJson = session.toEngineSwitchJsonString()
+    val sessionJson = session.copy(engineKind = picked).toEngineSwitchJsonString()
 
     val restart =
         Intent(this, PlayerActivity::class.java).apply {
@@ -251,8 +249,8 @@ private fun PlayerActivity.restartForEngineSwitch(picked: PlayerEngineKind) {
 }
 
 internal fun PlayerActivity.showPlayerEngineDialog() {
-    val currentKind = player?.kind ?: PlayerEngineKind.fromPrefValue(BiliClient.prefs.playerEngineKind)
-    val items = listOf("ExoPlayer（默认）", "IjkPlayer")
+    val currentKind = player?.kind ?: session.engineKind
+    val items = listOf("ExoPlayer", "IjkPlayer")
     val checked = if (currentKind == PlayerEngineKind.IjkPlayer) 1 else 0
     showSettingsSingleChoiceDialog(
         title = "播放器内核",

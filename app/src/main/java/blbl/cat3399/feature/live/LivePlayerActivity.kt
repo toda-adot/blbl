@@ -167,6 +167,7 @@ class LivePlayerActivity : BaseActivity() {
                 ?.takeIf { it.isNotBlank() }
         session =
             LiveSession(
+                engineKind = PlayerEngineKind.fromPrefValue(prefs.playerEngineKind),
                 highBitrateEnabled = prefs.liveHighBitrateEnabled,
                 danmaku = DanmakuSessionSettings(
                     enabled = prefs.danmakuEnabled,
@@ -199,7 +200,7 @@ class LivePlayerActivity : BaseActivity() {
 
         binding.btnBack.setOnClickListener { finish() }
 
-        val desiredEngineKind = PlayerEngineKind.fromPrefValue(prefs.playerEngineKind)
+        val desiredEngineKind = session.engineKind
         val engineKind =
             if (desiredEngineKind == PlayerEngineKind.IjkPlayer && !IjkPlayerPlugin.isInstalled(this)) {
                 AppToast.showLong(this, "IjkPlayer 插件未安装，已回退到 ExoPlayer")
@@ -207,6 +208,9 @@ class LivePlayerActivity : BaseActivity() {
             } else {
                 desiredEngineKind
             }
+        if (session.engineKind != engineKind) {
+            session = session.copy(engineKind = engineKind)
+        }
         val engine: BlblPlayerEngine =
             when (engineKind) {
                 PlayerEngineKind.IjkPlayer -> {
@@ -850,7 +854,7 @@ class LivePlayerActivity : BaseActivity() {
                 ?.let { "线路 ${it.order}" }
                 ?: "自动"
         val engineLabel =
-            when (player?.kind ?: PlayerEngineKind.fromPrefValue(prefs.playerEngineKind)) {
+            when (player?.kind ?: session.engineKind) {
                 PlayerEngineKind.IjkPlayer -> "IjkPlayer"
                 PlayerEngineKind.ExoPlayer -> "ExoPlayer"
             }
@@ -893,8 +897,8 @@ class LivePlayerActivity : BaseActivity() {
     }
 
     private fun showPlayerEngineDialog() {
-        val currentKind = player?.kind ?: PlayerEngineKind.fromPrefValue(BiliClient.prefs.playerEngineKind)
-        val items = listOf("ExoPlayer（默认）", "IjkPlayer")
+        val currentKind = player?.kind ?: session.engineKind
+        val items = listOf("ExoPlayer", "IjkPlayer")
         val checked = if (currentKind == PlayerEngineKind.IjkPlayer) 1 else 0
         AppPopup.singleChoice(
             context = this,
@@ -905,8 +909,7 @@ class LivePlayerActivity : BaseActivity() {
             val picked = if (which == 1) PlayerEngineKind.IjkPlayer else PlayerEngineKind.ExoPlayer
             if (picked == currentKind) return@singleChoice
             fun doSwitch() {
-                BiliClient.prefs.playerEngineKind = picked.prefValue
-                val sessionJson = session.toEngineSwitchJsonString()
+                val sessionJson = session.copy(engineKind = picked).toEngineSwitchJsonString()
                 val restart =
                     Intent(this, LivePlayerActivity::class.java).apply {
                         putExtra(EXTRA_ROOM_ID, roomId)
@@ -1760,6 +1763,7 @@ class LivePlayerActivity : BaseActivity() {
     private fun LiveSession.toEngineSwitchJsonString(): String {
         return JSONObject().apply {
             put("v", 1)
+            put("engineKind", engineKind.prefValue)
             put("targetQn", targetQn)
             put("lineOrder", lineOrder)
             put("originFailCount", originFailCount)
@@ -1786,6 +1790,7 @@ class LivePlayerActivity : BaseActivity() {
             return obj.optInt(key, fallback)
         }
 
+        val restoredEngineKind = PlayerEngineKind.fromPrefValue(obj.optString("engineKind", engineKind.prefValue))
         val restoredTargetQn = optInt("targetQn", targetQn).takeIf { it > 0 } ?: targetQn
         val restoredLineOrder = optInt("lineOrder", lineOrder).takeIf { it > 0 } ?: lineOrder
         val restoredOriginFailCount = optInt("originFailCount", originFailCount).coerceAtLeast(0)
@@ -1798,6 +1803,7 @@ class LivePlayerActivity : BaseActivity() {
         val restoredDebugEnabled = obj.optBoolean("debugEnabled", debugEnabled)
 
         return copy(
+            engineKind = restoredEngineKind,
             targetQn = restoredTargetQn,
             lineOrder = restoredLineOrder,
             originFailCount = restoredOriginFailCount,
@@ -1815,6 +1821,7 @@ class LivePlayerActivity : BaseActivity() {
     }
 
     private data class LiveSession(
+        val engineKind: PlayerEngineKind = PlayerEngineKind.fromPrefValue(BiliClient.prefs.playerEngineKind),
         val targetQn: Int = LIVE_QN_ORIGINAL,
         val lineOrder: Int = 1,
         val originFailCount: Int = 0,
