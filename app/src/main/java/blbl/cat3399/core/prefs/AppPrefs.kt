@@ -89,6 +89,10 @@ class AppPrefs(context: Context) {
             prefs.edit().putString(KEY_FOLLOWING_LIST_ORDER, normalized).apply()
         }
 
+    var dynamicFollowingRecentUpdateDotEnabled: Boolean
+        get() = prefs.getBoolean(KEY_DYNAMIC_FOLLOWING_RECENT_UPDATE_DOT_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_DYNAMIC_FOLLOWING_RECENT_UPDATE_DOT_ENABLED, value).apply()
+
     var userAgent: String
         get() = prefs.getString(KEY_UA, DEFAULT_UA) ?: DEFAULT_UA
         set(value) = prefs.edit().putString(KEY_UA, value).apply()
@@ -782,6 +786,7 @@ class AppPrefs(context: Context) {
         private const val KEY_THEME_PRESET = "theme_preset"
         private const val KEY_STARTUP_PAGE = "startup_page"
         private const val KEY_FOLLOWING_LIST_ORDER = "following_list_order"
+        private const val KEY_DYNAMIC_FOLLOWING_RECENT_UPDATE_DOT_ENABLED = "dynamic_following_recent_update_dot_enabled"
         private const val KEY_IMAGE_QUALITY = "image_quality"
         private const val KEY_DANMAKU_ENABLED = "danmaku_enabled"
         private const val KEY_DANMAKU_ALLOW_TOP = "danmaku_allow_top"

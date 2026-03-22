@@ -32,6 +32,10 @@ import kotlin.math.roundToLong
 object BiliApi {
     private const val TAG = "BiliApi"
     private const val PILI_REFERER = "https://www.bilibili.com"
+    private const val DYNAMIC_HOST_FEED_CONSUME_FEATURES =
+        "itemOpusStyle,listOnlyfans,opusBigCover,onlyfansVote,decorationCard,onlyfansAssetsV2," +
+            "forwardListHidden,ugcDelete,onlyfansQaCard,commentsNewVersion,avatarAutoTheme," +
+            "sunflowerStyle,cardsEnhance,eva3CardOpus,eva3CardVideo,eva3CardComment,eva3CardVote,eva3CardUser"
 
     // Used by APP-side PGC aggregation endpoints like /pgc/page/bangumi and /pgc/page/cinema/tab.
     // The response schema/modules may vary by build; keep this as a reasonably new default.
@@ -1758,6 +1762,57 @@ object BiliApi {
             AppLog.d(TAG, "dynamicAllVideo items=${items.length()} cards=${cards.size} hasMore=$hasMore nextOffset=${nextOffset?.take(8)}")
             DynamicPage(cards, nextOffset)
         }
+    }
+
+    suspend fun dynamicRecentUpdateUpMids(): Set<Long> {
+        val json =
+            BiliClient.getJson(
+                "https://api.bilibili.com/x/polymer/web-dynamic/v1/portal",
+                headers = mapOf("Referer" to "https://www.bilibili.com/"),
+            )
+        val code = json.optInt("code", 0)
+        if (code != 0) {
+            val msg = json.optString("message", json.optString("msg", ""))
+            throw BiliApiException(apiCode = code, apiMessage = msg)
+        }
+        val data = json.optJSONObject("data") ?: JSONObject()
+        val upList =
+            data.optJSONObject("up_list")?.optJSONArray("items")
+                ?: data.optJSONArray("up_list")
+                ?: JSONArray()
+        return withContext(Dispatchers.Default) {
+            val mids = LinkedHashSet<Long>(upList.length())
+            for (i in 0 until upList.length()) {
+                val obj = upList.optJSONObject(i) ?: continue
+                if (!obj.optBoolean("has_update", false)) continue
+                val mid = obj.optLong("mid", 0L)
+                if (mid > 0L) mids.add(mid)
+            }
+            AppLog.d(TAG, "dynamicRecentUpdateUpMids upList=${upList.length()} updated=${mids.size}")
+            mids
+        }
+    }
+
+    suspend fun consumeDynamicRecentUpdate(hostMid: Long) {
+        val safeHostMid = hostMid.takeIf { it > 0L } ?: error("hostMid required")
+        val url =
+            BiliClient.withQuery(
+                "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all",
+                linkedMapOf(
+                    "host_mid" to safeHostMid.toString(),
+                    "offset" to "",
+                    "page" to "1",
+                    "platform" to "web",
+                    "features" to DYNAMIC_HOST_FEED_CONSUME_FEATURES,
+                ),
+            )
+        val json = BiliClient.getJson(url)
+        val code = json.optInt("code", 0)
+        if (code != 0) {
+            val msg = json.optString("message", json.optString("msg", ""))
+            throw BiliApiException(apiCode = code, apiMessage = msg)
+        }
+        AppLog.d(TAG, "consumeDynamicRecentUpdate hostMid=$safeHostMid ok")
     }
 
     private suspend fun dynamicSpaceVideoPage(hostMid: Long, offset: String?): DynamicFeedPage {

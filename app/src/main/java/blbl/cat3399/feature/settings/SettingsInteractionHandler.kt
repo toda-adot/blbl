@@ -404,6 +404,7 @@ class SettingsInteractionHandler(
                     .put("sidebar_size", prefs.sidebarSize)
                     .put("startup_page", prefs.startupPage)
                     .put("following_list_order", prefs.followingListOrder)
+                    .put("dynamic_following_recent_update_dot_enabled", prefs.dynamicFollowingRecentUpdateDotEnabled)
                     .put("image_quality", prefs.imageQuality)
                     .put("fullscreen_enabled", prefs.fullscreenEnabled)
                     .put("tab_switch_follows_focus", prefs.tabSwitchFollowsFocus)
@@ -1137,6 +1138,12 @@ class SettingsInteractionHandler(
 
             SettingId.PlayerDebugEnabled -> {
                 prefs.playerDebugEnabled = !prefs.playerDebugEnabled
+                renderer.refreshSection(entry.id)
+            }
+
+            SettingId.DynamicFollowingRecentUpdateDotEnabled -> {
+                prefs.dynamicFollowingRecentUpdateDotEnabled = !prefs.dynamicFollowingRecentUpdateDotEnabled
+                AppToast.show(activity, "优先显示最近更新Up：${if (prefs.dynamicFollowingRecentUpdateDotEnabled) "开" else "关"}")
                 renderer.refreshSection(entry.id)
             }
 

@@ -217,6 +217,12 @@ class SettingsRenderer(
                         SettingsText.mainBackFocusSchemeText(prefs.mainBackFocusScheme),
                         null,
                     ),
+                    SettingEntry(
+                        SettingId.DynamicFollowingRecentUpdateDotEnabled,
+                        "优先显示最近更新Up",
+                        if (prefs.dynamicFollowingRecentUpdateDotEnabled) "开" else "关",
+                        null,
+                    ),
                 )
 
             "播放设置" ->

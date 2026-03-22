@@ -2,6 +2,7 @@ package blbl.cat3399.feature.dynamic
 
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.RecyclerView
 import blbl.cat3399.core.image.ImageLoader
 import blbl.cat3399.core.image.ImageUrl
@@ -17,6 +18,7 @@ class FollowingAdapter(
         val mid: Long,
         val name: String,
         val avatarUrl: String?,
+        val showRecentUpdateDot: Boolean = false,
         val isAll: Boolean = false,
     )
 
@@ -36,7 +38,7 @@ class FollowingAdapter(
         val prevSelected = selectedMid
         val sameItems =
             items.size == list.size &&
-                items.indices.all { idx -> items[idx].mid == list[idx].mid }
+                items.indices.all { idx -> items[idx] == list[idx] }
 
         selectedMid = selected
         if (sameItems) {
@@ -50,13 +52,6 @@ class FollowingAdapter(
         items.clear()
         items.addAll(list)
         notifyDataSetChanged()
-    }
-
-    fun append(list: List<FollowingUi>) {
-        if (list.isEmpty()) return
-        val start = items.size
-        items.addAll(list)
-        notifyItemRangeInserted(start, list.size)
     }
 
     override fun getItemId(position: Int): Long = items[position].mid
@@ -92,6 +87,7 @@ class FollowingAdapter(
                 binding.ivAvatar.imageTintList = null
                 ImageLoader.loadInto(binding.ivAvatar, ImageUrl.avatar(item.avatarUrl))
             }
+            binding.vAvatarUpdateDot.isVisible = !item.isAll && item.showRecentUpdateDot
             binding.vSelected.visibility = if (selected) android.view.View.VISIBLE else android.view.View.GONE
             binding.root.isSelected = selected
             binding.tvName.setTextColor(

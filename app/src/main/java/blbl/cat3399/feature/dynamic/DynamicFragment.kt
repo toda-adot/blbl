@@ -13,6 +13,7 @@ import androidx.recyclerview.widget.RecyclerView
 import blbl.cat3399.R
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
+import blbl.cat3399.core.model.Following
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.DpadGridController
@@ -37,6 +38,8 @@ import blbl.cat3399.ui.BackPressHandler
 import blbl.cat3399.ui.RefreshKeyHandler
 import blbl.cat3399.ui.SidebarFocusHost
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 class DynamicFragment : Fragment(), RefreshKeyHandler, BackPressHandler {
@@ -63,6 +66,10 @@ class DynamicFragment : Fragment(), RefreshKeyHandler, BackPressHandler {
     private var followEndReached: Boolean = false
     private var followRequestToken: Int = 0
     private var currentFollowingListOrder: String = BiliClient.prefs.followingListOrder
+    private var currentRecentUpdatePriorityEnabled: Boolean = BiliClient.prefs.dynamicFollowingRecentUpdateDotEnabled
+    private var recentUpdatePriorityMids: Set<Long> = emptySet()
+    private val consumingRecentUpdateMids = HashSet<Long>()
+    private val consumedRecentUpdateMids = HashSet<Long>()
     private val loadedFollowMids = HashSet<Long>()
     private var followingListController: DpadGridController? = null
 
@@ -247,6 +254,7 @@ class DynamicFragment : Fragment(), RefreshKeyHandler, BackPressHandler {
         loadAll(resetFeed = true)
     }
 
+    private var baseFollowings: List<Following> = emptyList()
     private var followItems: List<FollowingAdapter.FollowingUi> = emptyList()
     private var selectedMid: Long = FollowingAdapter.MID_ALL
 
@@ -254,6 +262,71 @@ class DynamicFragment : Fragment(), RefreshKeyHandler, BackPressHandler {
         selectedMid = following.mid
         followAdapter.submit(followItems, selected = selectedMid)
         resetAndLoadFeed()
+        maybeConsumeRecentUpdate(following)
+    }
+
+    private fun renderFollowings() {
+        followItems = buildFollowingUiList()
+        if (selectedMid != FollowingAdapter.MID_ALL && followItems.none { it.mid == selectedMid }) {
+            selectedMid = FollowingAdapter.MID_ALL
+        }
+        followAdapter.submit(followItems, selected = selectedMid)
+    }
+
+    private fun buildFollowingUiList(): List<FollowingAdapter.FollowingUi> {
+        val items = ArrayList<FollowingAdapter.FollowingUi>(baseFollowings.size + 1)
+        items += FollowingAdapter.FollowingUi(FollowingAdapter.MID_ALL, "所有", null, isAll = true)
+        val orderedFollowings = orderedFollowings()
+        for (following in orderedFollowings) {
+            val mid = following.mid
+            val hasRecentUpdate = recentUpdatePriorityMids.contains(mid)
+            items +=
+                FollowingAdapter.FollowingUi(
+                    mid = mid,
+                    name = following.name,
+                    avatarUrl = following.avatarUrl,
+                    showRecentUpdateDot =
+                        currentRecentUpdatePriorityEnabled &&
+                            hasRecentUpdate &&
+                            !consumedRecentUpdateMids.contains(mid),
+                )
+        }
+        return items
+    }
+
+    private fun orderedFollowings(): List<Following> {
+        if (!currentRecentUpdatePriorityEnabled) return baseFollowings
+        if (baseFollowings.isEmpty()) return baseFollowings
+        val updated = ArrayList<Following>(baseFollowings.size)
+        val normal = ArrayList<Following>(baseFollowings.size)
+        for (following in baseFollowings) {
+            if (recentUpdatePriorityMids.contains(following.mid)) {
+                updated += following
+            } else {
+                normal += following
+            }
+        }
+        return updated + normal
+    }
+
+    private fun maybeConsumeRecentUpdate(following: FollowingAdapter.FollowingUi) {
+        if (!currentRecentUpdatePriorityEnabled) return
+        if (following.isAll || !following.showRecentUpdateDot) return
+        val mid = following.mid.takeIf { it > 0L } ?: return
+        if (!consumingRecentUpdateMids.add(mid)) return
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                BiliApi.consumeDynamicRecentUpdate(hostMid = mid)
+                if (_binding == null) return@launch
+                consumedRecentUpdateMids.add(mid)
+                renderFollowings()
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                AppLog.w("Dynamic", "consume recent update failed mid=$mid", t)
+            } finally {
+                consumingRecentUpdateMids.remove(mid)
+            }
+        }
     }
 
     private fun loadAll(resetFeed: Boolean) {
@@ -291,33 +364,48 @@ class DynamicFragment : Fragment(), RefreshKeyHandler, BackPressHandler {
 
         loadedFollowMids.clear()
         currentFollowingListOrder = BiliClient.prefs.followingListOrder
+        currentRecentUpdatePriorityEnabled = BiliClient.prefs.dynamicFollowingRecentUpdateDotEnabled
+        recentUpdatePriorityMids = emptySet()
+        consumedRecentUpdateMids.clear()
         followPage = 1
         followEndReached = false
         followIsLoadingMore = false
         followingListController?.clearPendingFocusAfterLoadMore()
         val token = ++followRequestToken
         if (selectedMid == 0L) selectedMid = FollowingAdapter.MID_ALL
-        followItems = listOf(FollowingAdapter.FollowingUi(FollowingAdapter.MID_ALL, "所有", null, isAll = true))
-        followAdapter.submit(followItems, selected = selectedMid)
+        baseFollowings = emptyList()
+        renderFollowings()
 
         followIsLoadingMore = true
         try {
-            val res = BiliApi.followingsPage(vmid = userMid, pn = followPage, ps = 50, order = currentFollowingListOrder)
+            val res =
+                coroutineScope {
+                    val recentUpdateDeferred =
+                        if (currentRecentUpdatePriorityEnabled) {
+                            async {
+                                runCatching { BiliApi.dynamicRecentUpdateUpMids() }
+                                    .onFailure { AppLog.w("Dynamic", "load recent update up list failed", it) }
+                                    .getOrElse { emptySet() }
+                            }
+                        } else {
+                            null
+                        }
+                    val followingPage =
+                        BiliApi.followingsPage(vmid = userMid, pn = followPage, ps = 50, order = currentFollowingListOrder)
+                    recentUpdatePriorityMids = recentUpdateDeferred?.await().orEmpty()
+                    followingPage
+                }
             if (token != followRequestToken) return
 
             val filtered = res.items.filter { loadedFollowMids.add(it.mid) }
-            val uiItems = filtered.map { f -> FollowingAdapter.FollowingUi(f.mid, f.name, f.avatarUrl) }
-            if (uiItems.isEmpty()) {
+            if (filtered.isEmpty()) {
                 followEndReached = true
                 context?.let { AppToast.show(it, "暂无关注") }
                 return
             }
 
-            followItems = followItems + uiItems
-            if (selectedMid != FollowingAdapter.MID_ALL && followItems.none { it.mid == selectedMid }) {
-                selectedMid = FollowingAdapter.MID_ALL
-            }
-            followAdapter.submit(followItems, selected = selectedMid)
+            baseFollowings = filtered
+            renderFollowings()
             followPage += 1
             followEndReached = !res.hasMore
         } catch (t: Throwable) {
@@ -343,10 +431,9 @@ class DynamicFragment : Fragment(), RefreshKeyHandler, BackPressHandler {
                 if (token != followRequestToken) return@launch
 
                 val filtered = res.items.filter { loadedFollowMids.add(it.mid) }
-                val uiItems = filtered.map { f -> FollowingAdapter.FollowingUi(f.mid, f.name, f.avatarUrl) }
-                if (uiItems.isNotEmpty()) {
-                    followItems = followItems + uiItems
-                    followAdapter.append(uiItems)
+                if (filtered.isNotEmpty()) {
+                    baseFollowings = baseFollowings + filtered
+                    renderFollowings()
                 }
                 followPage = targetPage + 1
                 followEndReached = !res.hasMore
