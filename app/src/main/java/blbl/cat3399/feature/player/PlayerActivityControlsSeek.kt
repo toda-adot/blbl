@@ -546,6 +546,12 @@ internal fun PlayerActivity.holdScrubStepMs(durationMs: Long, tickMs: Long): Lon
 }
 
 internal fun PlayerActivity.showSeekHint(text: String, hold: Boolean) {
+    // Auto-next preview hint has the highest priority: while it's visible, ignore any other hint requests.
+    // This keeps the UX stable in the last 2 seconds (no flicker from volume/brightness/shortcuts/etc).
+    if (autoNextHintVisible) {
+        val locked = autoNextHintText
+        if (!locked.isNullOrEmpty() && text != locked) return
+    }
     binding.tvSeekHint.text = text
     binding.tvSeekHint.visibility = View.VISIBLE
     seekHintJob?.cancel()
@@ -553,6 +559,10 @@ internal fun PlayerActivity.showSeekHint(text: String, hold: Boolean) {
 }
 
 internal fun PlayerActivity.scheduleHideSeekHint() {
+    // Keep the auto-next hint visible until:
+    // - user cancels (BACK), or
+    // - playback ends and we transition.
+    if (autoNextHintVisible) return
     seekHintJob?.cancel()
     seekHintJob =
         lifecycleScope.launch {

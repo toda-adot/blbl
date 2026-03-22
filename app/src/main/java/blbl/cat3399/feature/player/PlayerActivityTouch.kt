@@ -358,6 +358,7 @@ internal class PlayerTouchController(
         val duration = engine.duration.takeIf { it > 0 } ?: activity.currentViewDurationMs ?: return false
         activity.cancelPendingAutoResume(reason = "user_seek")
         activity.cancelPendingAutoSkip(reason = "user_seek", markIgnored = true)
+        activity.cancelPendingAutoNext(reason = "user_seek", markCancelledByUser = false)
         activity.scrubbing = true
         activity.keyScrubPendingSeekToMs = null
         activity.keyScrubEndJob?.cancel()

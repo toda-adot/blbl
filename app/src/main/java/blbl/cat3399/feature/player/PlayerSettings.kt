@@ -585,6 +585,8 @@ internal fun PlayerActivity.applyPlaybackMode(engine: BlblPlayerEngine) {
             AppPrefs.PLAYER_PLAYBACK_MODE_LOOP_ONE -> Player.REPEAT_MODE_ONE
             else -> Player.REPEAT_MODE_OFF
         }
+    clearAutoNextState(reason = "mode_change", resetUserCancellation = true)
+    maybeWarmUpAutoNextTarget()
 }
 
 internal fun PlayerActivity.showPlaybackModeDialog() {

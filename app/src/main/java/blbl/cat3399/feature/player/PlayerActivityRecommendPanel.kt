@@ -324,6 +324,10 @@ private fun PlayerActivity.recommendCardsForCurrentVideo(): List<VideoCard> {
     return relatedVideosCache?.takeIf { it.bvid == requestBvid }?.items.orEmpty()
 }
 
+internal fun PlayerActivity.ensureRecommendCardsLoadedForAutoNext() {
+    ensureRecommendCardsLoaded()
+}
+
 private fun PlayerActivity.ensureRecommendCardsLoaded() {
     val requestBvid = currentBvid.trim()
     if (requestBvid.isBlank()) return

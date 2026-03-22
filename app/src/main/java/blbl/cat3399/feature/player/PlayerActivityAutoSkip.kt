@@ -82,6 +82,7 @@ internal fun PlayerActivity.updateProgressUi() {
     val markerDurationMs = exo.duration.takeIf { it > 0 } ?: currentViewDurationMs ?: 0L
     maybeUpdateAutoSkipSegmentMarkers(durationMs = markerDurationMs)
     maybeTickAutoSkipSegments(posMs = pos)
+    maybeUpdateAutoNext(posMs = pos, durationMs = duration)
     updateBufferingOverlay()
 }
 
@@ -98,6 +99,7 @@ internal fun PlayerActivity.showAutoResumeHint(targetMs: Long) {
     val timeText = formatHms(targetMs.coerceAtLeast(0L))
     val msg = "将要跳到上次播放位置（$timeText），按返回取消"
     autoResumeHintVisible = true
+    autoResumeHintText = msg
     // Reuse the existing bottom "seek hint" component for consistent look & feel.
     showSeekHint(msg, hold = true)
     // Keep the hint visible until either:
@@ -109,11 +111,16 @@ internal fun PlayerActivity.showAutoResumeHint(targetMs: Long) {
 
 internal fun PlayerActivity.dismissAutoResumeHint() {
     if (!autoResumeHintVisible) return
+    val msg = autoResumeHintText
     autoResumeHintVisible = false
+    autoResumeHintText = null
     autoResumeHintTimeoutJob?.cancel()
     autoResumeHintTimeoutJob = null
-    seekHintJob?.cancel()
-    binding.tvSeekHint.visibility = View.GONE
+    // tvSeekHint is shared; only hide it if we are still showing our own message.
+    if (msg != null && binding.tvSeekHint.text?.toString() == msg) {
+        seekHintJob?.cancel()
+        binding.tvSeekHint.visibility = View.GONE
+    }
 }
 
 internal fun PlayerActivity.cancelPendingAutoSkip(reason: String, markIgnored: Boolean) {
@@ -133,14 +140,20 @@ internal fun PlayerActivity.showAutoSkipHint(segment: SkipSegment) {
     val range = "${formatHms(segment.startMs)}→${formatHms(segment.endMs)}"
     val msg = "将要跳过${label}片段（$range），按返回取消"
     autoSkipHintVisible = true
+    autoSkipHintText = msg
     showSeekHint(msg, hold = true)
 }
 
 internal fun PlayerActivity.dismissAutoSkipHint() {
     if (!autoSkipHintVisible) return
+    val msg = autoSkipHintText
     autoSkipHintVisible = false
-    seekHintJob?.cancel()
-    binding.tvSeekHint.visibility = View.GONE
+    autoSkipHintText = null
+    // tvSeekHint is shared; only hide it if we are still showing our own message.
+    if (msg != null && binding.tvSeekHint.text?.toString() == msg) {
+        seekHintJob?.cancel()
+        binding.tvSeekHint.visibility = View.GONE
+    }
 }
 
 internal fun PlayerActivity.maybeUpdateAutoSkipSegmentMarkers(durationMs: Long) {

@@ -171,6 +171,7 @@ internal fun PlayerActivity.startPlayback(
     cancelPendingAutoResume(reason = "new_media")
     autoResumeToken++
     autoResumeCancelledByUser = false
+    clearAutoNextState(reason = "new_media", resetUserCancellation = true)
     cancelPendingAutoSkip(reason = "new_media", markIgnored = false)
     autoSkipFetchJob?.cancel()
     autoSkipFetchJob = null
@@ -221,6 +222,7 @@ internal fun PlayerActivity.startPlayback(
     updateTopTitleUi(placeholder = initialTitle)
 
     updatePlaylistControls()
+    maybeWarmUpAutoNextTarget()
 
     val handler =
         playbackUncaughtHandler
@@ -801,13 +803,16 @@ internal fun PlayerActivity.handlePlaybackEnded(engine: BlblPlayerEngine) {
     if (now - lastEndedActionAtMs < 350) return
     lastEndedActionAtMs = now
 
-    when (resolvedPlaybackMode()) {
+    val mode = resolvedPlaybackMode()
+    val pendingTarget = autoNextPending
+    autoNextPending = null
+    dismissAutoNextHint()
+
+    when (mode) {
         AppPrefs.PLAYER_PLAYBACK_MODE_NONE -> Unit
 
         AppPrefs.PLAYER_PLAYBACK_MODE_LOOP_ONE -> {
-            engine.seekTo(0)
-            engine.playWhenReady = true
-            engine.play()
+            restartCurrentPlaybackFromBeginning(engine = engine, showControls = false, showHint = false)
         }
 
         AppPrefs.PLAYER_PLAYBACK_MODE_EXIT -> finish()
@@ -816,7 +821,19 @@ internal fun PlayerActivity.handlePlaybackEnded(engine: BlblPlayerEngine) {
         AppPrefs.PLAYER_PLAYBACK_MODE_PARTS_LIST,
         AppPrefs.PLAYER_PLAYBACK_MODE_PARTS_LIST_THEN_RECOMMEND,
         AppPrefs.PLAYER_PLAYBACK_MODE_RECOMMEND,
-        -> playNextByPlaybackMode(userInitiated = false)
+        -> {
+            if (autoNextCancelledByUser) {
+                trace?.log("autonext:ended", "action=stay mode=$mode")
+                return
+            }
+            val target = pendingTarget ?: resolveAutoNextTargetByPlaybackMode(preloadRecommendation = false)
+            if (target != null) {
+                trace?.log("autonext:ended", "action=play mode=$mode target=${target.javaClass.simpleName}")
+                playAutoNextTarget(target)
+            } else {
+                playNextByPlaybackMode(userInitiated = false)
+            }
+        }
 
         else -> Unit
     }

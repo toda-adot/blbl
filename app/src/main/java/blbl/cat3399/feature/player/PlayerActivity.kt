@@ -121,8 +121,12 @@ class PlayerActivity : BaseActivity() {
     internal var autoResumeJob: kotlinx.coroutines.Job? = null
     internal var autoResumeHintTimeoutJob: kotlinx.coroutines.Job? = null
     internal var autoResumeHintVisible: Boolean = false
+    internal var autoResumeHintText: String? = null
     internal var autoSkipFetchJob: kotlinx.coroutines.Job? = null
     internal var autoSkipHintVisible: Boolean = false
+    internal var autoSkipHintText: String? = null
+    internal var autoNextHintVisible: Boolean = false
+    internal var autoNextHintText: String? = null
     private var reportProgressJob: kotlinx.coroutines.Job? = null
     internal var autoHideJob: kotlinx.coroutines.Job? = null
     internal var seekOsdHideJob: kotlinx.coroutines.Job? = null
@@ -263,6 +267,8 @@ class PlayerActivity : BaseActivity() {
     internal var autoSkipSegments: List<SkipSegment> = emptyList()
     internal val autoSkipHandledSegmentIds = HashSet<String>()
     internal var autoSkipPending: PendingAutoSkip? = null
+    internal var autoNextPending: AutoNextTarget? = null
+    internal var autoNextCancelledByUser: Boolean = false
     internal var autoSkipMarkersDirty: Boolean = true
     internal var autoSkipMarkersDurationMs: Long = -1L
     internal var autoSkipMarkersShown: Boolean = false
@@ -1392,13 +1398,15 @@ class PlayerActivity : BaseActivity() {
             KeyEvent.KEYCODE_BACK -> {
                 val cancelledAutoResume = autoResumeHintVisible
                 val cancelledAutoSkip = autoSkipHintVisible || autoSkipPending != null
+                val cancelledAutoNext = autoNextHintVisible || autoNextPending != null
                 if (cancelledAutoResume) cancelPendingAutoResume(reason = "back")
                 if (cancelledAutoSkip) cancelPendingAutoSkip(reason = "back", markIgnored = true)
-                if (cancelledAutoResume || cancelledAutoSkip) {
+                if (cancelledAutoNext) cancelPendingAutoNext(reason = "back", markCancelledByUser = true)
+                if (cancelledAutoResume || cancelledAutoSkip || cancelledAutoNext) {
                     finishOnBackKeyUp = false
                     exitTraceLog(
                         "back:down action=cancel_hint",
-                        "resume=${if (cancelledAutoResume) 1 else 0} skip=${if (cancelledAutoSkip) 1 else 0} osd=$osdMode sidePanel=${if (isSidePanelVisible()) 1 else 0}",
+                        "resume=${if (cancelledAutoResume) 1 else 0} skip=${if (cancelledAutoSkip) 1 else 0} next=${if (cancelledAutoNext) 1 else 0} osd=$osdMode sidePanel=${if (isSidePanelVisible()) 1 else 0}",
                     )
                     return true
                 }
@@ -1771,6 +1779,10 @@ class PlayerActivity : BaseActivity() {
 
     internal fun togglePlayPause(showControls: Boolean = true, showHint: Boolean = false) {
         val engine = player ?: return
+        if (engine.playbackState == Player.STATE_ENDED) {
+            restartCurrentPlaybackFromBeginning(engine = engine, showControls = showControls, showHint = showHint)
+            return
+        }
         val willPlay = !engine.isPlaying
         if (willPlay) {
             engine.play()
@@ -1850,6 +1862,7 @@ class PlayerActivity : BaseActivity() {
                     if (!fromUser) return
                     cancelPendingAutoResume(reason = "user_seek")
                     cancelPendingAutoSkip(reason = "user_seek", markIgnored = true)
+                    cancelPendingAutoNext(reason = "user_seek", markCancelledByUser = false)
                     scrubbing = true
                     noteUserInteraction()
                     if (seekBar?.isPressed != true) scheduleKeyScrubEnd()
@@ -1887,6 +1900,7 @@ class PlayerActivity : BaseActivity() {
                 override fun onStartTrackingTouch(seekBar: SeekBar?) {
                     cancelPendingAutoResume(reason = "user_seek")
                     cancelPendingAutoSkip(reason = "user_seek", markIgnored = true)
+                    cancelPendingAutoNext(reason = "user_seek", markCancelledByUser = false)
                     scrubbing = true
                     keyScrubPendingSeekToMs = null
                     keyScrubEndJob?.cancel()
@@ -3290,6 +3304,8 @@ class PlayerActivity : BaseActivity() {
         internal const val TOUCH_GESTURE_SEEK_MAX_FULL_WIDTH_MS = 4 * 60_000L
         internal const val TOUCH_GESTURE_MIN_BRIGHTNESS = 0.02f
         internal const val SEEK_HINT_HIDE_DELAY_MS = 900L
+        internal const val AUTO_NEXT_PREVIEW_WINDOW_MS = 2_000L
+        internal const val AUTO_NEXT_TITLE_MAX_CHARS = 12
         internal const val SEEK_OSD_HIDE_DELAY_MS = 1_500L
         internal const val AUTO_SKIP_START_WINDOW_MS = 1_000L
         internal const val AUTO_SKIP_DELAY_MS = 2_000L
