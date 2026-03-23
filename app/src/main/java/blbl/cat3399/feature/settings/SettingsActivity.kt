@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.KeyEvent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.recyclerview.widget.LinearLayoutManager
+import blbl.cat3399.core.io.CreateDocumentContract
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.BaseActivity
 import blbl.cat3399.core.ui.FocusTreeUtils
@@ -27,10 +28,10 @@ class SettingsActivity : BaseActivity() {
             interactionHandler.onGaiaVgateResult(result)
         }
 
-    private val exportTreeLauncher =
-        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+    private val exportDocumentLauncher =
+        registerForActivityResult(CreateDocumentContract()) { uri ->
             if (!this::interactionHandler.isInitialized) return@registerForActivityResult
-            interactionHandler.onExportTreeSelected(uri)
+            interactionHandler.onExportDocumentSelected(uri)
         }
 
     private val importConfigLauncher =
@@ -62,7 +63,7 @@ class SettingsActivity : BaseActivity() {
                 activity = this,
                 state = state,
                 gaiaVgateLauncher = gaiaVgateLauncher,
-                exportTreeLauncher = exportTreeLauncher,
+                exportDocumentLauncher = exportDocumentLauncher,
                 importConfigLauncher = importConfigLauncher,
             )
 

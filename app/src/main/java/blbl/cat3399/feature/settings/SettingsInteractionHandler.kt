@@ -22,6 +22,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import blbl.cat3399.R
 import blbl.cat3399.BuildConfig
+import blbl.cat3399.core.io.CreateDocumentRequest
 import blbl.cat3399.core.io.DocumentExporter
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.log.LogExporter
@@ -66,18 +67,26 @@ class SettingsInteractionHandler(
     private val activity: SettingsActivity,
     private val state: SettingsState,
     private val gaiaVgateLauncher: ActivityResultLauncher<Intent>,
-    private val exportTreeLauncher: ActivityResultLauncher<Uri?>,
+    private val exportDocumentLauncher: ActivityResultLauncher<CreateDocumentRequest>,
     private val importConfigLauncher: ActivityResultLauncher<Array<String>>,
 ) {
     lateinit var renderer: SettingsRenderer
 
-    private sealed interface PendingTreeExport {
-        data object Logs : PendingTreeExport
+    private sealed interface PendingDocumentExport {
+        data class Logs(
+            val prepared: PreparedLogsExport,
+        ) : PendingDocumentExport
 
         data class Config(
-            val mode: AppConfigBackup.ExportMode,
-        ) : PendingTreeExport
+            val prepared: PreparedConfigExport,
+        ) : PendingDocumentExport
     }
+
+    private data class PreparedLogsExport(
+        val fileName: String,
+        val nowMs: Long,
+        val metaJson: String,
+    )
 
     private data class PreparedConfigExport(
         val requestedMode: AppConfigBackup.ExportMode,
@@ -94,7 +103,7 @@ class SettingsInteractionHandler(
     private var clearCacheJob: Job? = null
     private var cacheSizeJob: Job? = null
     private var configTransferJob: Job? = null
-    private var pendingTreeExport: PendingTreeExport? = null
+    private var pendingDocumentExport: PendingDocumentExport? = null
 
     fun onSectionShown(sectionName: String) {
         when (sectionName) {
@@ -116,13 +125,13 @@ class SettingsInteractionHandler(
         renderer.refreshSection(SettingId.GaiaVgate)
     }
 
-    fun onExportTreeSelected(uri: Uri?) {
-        val request = pendingTreeExport
-        pendingTreeExport = null
+    fun onExportDocumentSelected(uri: Uri?) {
+        val request = pendingDocumentExport
+        pendingDocumentExport = null
         if (uri == null || request == null) return
         when (request) {
-            PendingTreeExport.Logs -> exportLogsToTreeUri(uri)
-            is PendingTreeExport.Config -> exportConfigToTreeUri(uri = uri, mode = request.mode)
+            is PendingDocumentExport.Logs -> exportLogsToUri(uri = uri, prepared = request.prepared)
+            is PendingDocumentExport.Config -> exportConfigToUri(uri = uri, prepared = request.prepared)
         }
     }
 
@@ -131,25 +140,26 @@ class SettingsInteractionHandler(
         importConfigFromUri(uri)
     }
 
-    private fun exportLogsToTreeUri(uri: Uri) {
+    private fun exportLogsToUri(
+        uri: Uri,
+        prepared: PreparedLogsExport,
+    ) {
         exportLogsJob?.cancel()
         exportLogsJob =
             activity.lifecycleScope.launch {
                 AppToast.show(activity, "正在导出日志…")
-                val nowMs = System.currentTimeMillis()
-                val deviceUuid = BiliClient.prefs.deviceUuid
-                val metaJson = buildUploadMetaJson(nowMs = nowMs, deviceUuid = deviceUuid)
                 runCatching {
                     withContext(Dispatchers.IO) {
-                        LogExporter.exportToTreeUri(
+                        LogExporter.exportToUri(
                             context = activity,
-                            treeUri = uri,
-                            nowMs = nowMs,
+                            uri = uri,
+                            nowMs = prepared.nowMs,
+                            fileNameOverride = prepared.fileName,
                             extras =
                                 listOf(
                                     LogExporter.ZipExtra(
                                         path = "meta.json",
-                                        bytes = metaJson.toByteArray(Charsets.UTF_8),
+                                        bytes = prepared.metaJson.toByteArray(Charsets.UTF_8),
                                     ),
                                 ),
                         )
@@ -164,31 +174,29 @@ class SettingsInteractionHandler(
             }
     }
 
-    private fun exportLogsToLocalFile() {
+    private fun exportLogsToLocalFile(prepared: PreparedLogsExport) {
         exportLogsJob?.cancel()
         exportLogsJob =
             activity.lifecycleScope.launch {
                 AppToast.show(activity, "正在导出日志到本地…")
-                val nowMs = System.currentTimeMillis()
-                val deviceUuid = BiliClient.prefs.deviceUuid
-                val metaJson = buildUploadMetaJson(nowMs = nowMs, deviceUuid = deviceUuid)
                 runCatching {
                     withContext(Dispatchers.IO) {
                         LogExporter.exportToLocalFile(
                             context = activity,
-                            nowMs = nowMs,
+                            nowMs = prepared.nowMs,
+                            fileNameOverride = prepared.fileName,
                             extras =
                                 listOf(
                                     LogExporter.ZipExtra(
                                         path = "meta.json",
-                                        bytes = metaJson.toByteArray(Charsets.UTF_8),
+                                        bytes = prepared.metaJson.toByteArray(Charsets.UTF_8),
                                     ),
                                 ),
                         )
                     }
                 }.onSuccess { result ->
                     val path = result.file.absolutePath
-                    AppToast.showLong(activity, "无法选择文件夹，已导出到本地：${result.fileName}（${result.includedFiles}个文件）\n路径：$path")
+                    AppToast.showLong(activity, "无法打开保存文件，已导出到本地：${result.fileName}（${result.includedFiles}个文件）\n路径：$path")
                 }.onFailure { t ->
                     AppLog.w("Settings", "export logs (local) failed", t)
                     val msg = t.message?.takeIf { it.isNotBlank() } ?: "未知错误"
@@ -240,38 +248,27 @@ class SettingsInteractionHandler(
             AppToast.show(activity, "正在处理配置…")
             return
         }
-        if (!canOpenDocumentTree()) {
-            exportConfigToLocalFile(mode)
-            return
-        }
-        pendingTreeExport = PendingTreeExport.Config(mode)
-        try {
-            exportTreeLauncher.launch(null)
-        } catch (e: ActivityNotFoundException) {
-            pendingTreeExport = null
-            AppLog.w("Settings", "OpenDocumentTree not supported; fallback to local config export", e)
-            exportConfigToLocalFile(mode)
-        } catch (t: Throwable) {
-            pendingTreeExport = null
-            AppLog.w("Settings", "open config export picker failed; fallback to local export", t)
-            exportConfigToLocalFile(mode)
-        }
+        val prepared = prepareConfigExport(mode)
+        launchDocumentExport(
+            pending = PendingDocumentExport.Config(prepared),
+            request = CreateDocumentRequest(mimeType = AppConfigBackup.JSON_MIME, fileName = prepared.fileName),
+            onFallbackToLocal = { exportConfigToLocalFile(prepared) },
+            logTag = "config",
+        )
     }
 
-    private fun exportConfigToTreeUri(
+    private fun exportConfigToUri(
         uri: Uri,
-        mode: AppConfigBackup.ExportMode,
+        prepared: PreparedConfigExport,
     ) {
         configTransferJob =
             activity.lifecycleScope.launch {
-                val prepared = prepareConfigExport(mode)
                 AppToast.show(activity, exportStartToast(prepared))
                 runCatching {
                     withContext(Dispatchers.IO) {
-                        DocumentExporter.exportToTreeUri(
+                        DocumentExporter.exportToUri(
                             context = activity,
-                            treeUri = uri,
-                            mimeType = AppConfigBackup.JSON_MIME,
+                            uri = uri,
                             fileName = prepared.fileName,
                         ) { out ->
                             out.write(prepared.jsonText.toByteArray(Charsets.UTF_8))
@@ -287,14 +284,13 @@ class SettingsInteractionHandler(
             }
     }
 
-    private fun exportConfigToLocalFile(mode: AppConfigBackup.ExportMode) {
+    private fun exportConfigToLocalFile(prepared: PreparedConfigExport) {
         if (configTransferJob?.isActive == true) {
             AppToast.show(activity, "正在处理配置…")
             return
         }
         configTransferJob =
             activity.lifecycleScope.launch {
-                val prepared = prepareConfigExport(mode)
                 AppToast.show(activity, "${exportStartToast(prepared)}到本地…")
                 runCatching {
                     withContext(Dispatchers.IO) {
@@ -307,7 +303,7 @@ class SettingsInteractionHandler(
                         }
                     }
                 }.onSuccess { result ->
-                    val suffix = "无法选择文件夹，已导出到本地：${result.fileName}\n路径：${result.file.absolutePath}"
+                    val suffix = "无法打开保存文件，已导出到本地：${result.fileName}\n路径：${result.file.absolutePath}"
                     AppToast.showLong(activity, buildConfigExportSuccessText(prepared = prepared, suffix = suffix))
                 }.onFailure { t ->
                     AppLog.w("Settings", "export config (local) failed", t)
@@ -320,10 +316,6 @@ class SettingsInteractionHandler(
     private fun startImportConfig() {
         if (configTransferJob?.isActive == true) {
             AppToast.show(activity, "正在处理配置…")
-            return
-        }
-        if (!canOpenDocument()) {
-            AppToast.showLong(activity, "当前设备不支持导入配置")
             return
         }
         try {
@@ -746,14 +738,33 @@ class SettingsInteractionHandler(
             )
     }
 
-    private fun canOpenDocumentTree(): Boolean {
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
-        return intent.resolveActivity(activity.packageManager) != null
+    private fun prepareLogsExport(nowMs: Long = System.currentTimeMillis()): PreparedLogsExport {
+        val deviceUuid = BiliClient.prefs.deviceUuid
+        return PreparedLogsExport(
+            fileName = LogExporter.suggestExportFileName(nowMs = nowMs),
+            nowMs = nowMs,
+            metaJson = buildUploadMetaJson(nowMs = nowMs, deviceUuid = deviceUuid),
+        )
     }
 
-    private fun canOpenDocument(): Boolean {
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*")
-        return intent.resolveActivity(activity.packageManager) != null
+    private fun launchDocumentExport(
+        pending: PendingDocumentExport,
+        request: CreateDocumentRequest,
+        onFallbackToLocal: () -> Unit,
+        logTag: String,
+    ) {
+        pendingDocumentExport = pending
+        try {
+            exportDocumentLauncher.launch(request)
+        } catch (e: ActivityNotFoundException) {
+            pendingDocumentExport = null
+            AppLog.w("Settings", "CreateDocument not supported; fallback to local $logTag export", e)
+            onFallbackToLocal()
+        } catch (t: Throwable) {
+            pendingDocumentExport = null
+            AppLog.w("Settings", "open $logTag export picker failed; fallback to local export", t)
+            onFallbackToLocal()
+        }
     }
 
     fun onEntryClicked(entry: SettingEntry) {
@@ -811,22 +822,13 @@ class SettingsInteractionHandler(
             SettingId.ConfigTransfer -> showConfigTransferDialog()
             SettingId.ClearLogin -> showClearLoginDialog(state.currentSectionIndex, entry.id)
             SettingId.ExportLogs -> {
-                if (!canOpenDocumentTree()) {
-                    exportLogsToLocalFile()
-                    return
-                }
-                pendingTreeExport = PendingTreeExport.Logs
-                try {
-                    exportTreeLauncher.launch(null)
-                } catch (e: ActivityNotFoundException) {
-                    pendingTreeExport = null
-                    AppLog.w("Settings", "OpenDocumentTree not supported; fallback to local export", e)
-                    exportLogsToLocalFile()
-                } catch (t: Throwable) {
-                    pendingTreeExport = null
-                    AppLog.w("Settings", "open export logs picker failed; fallback to local export", t)
-                    exportLogsToLocalFile()
-                }
+                val prepared = prepareLogsExport()
+                launchDocumentExport(
+                    pending = PendingDocumentExport.Logs(prepared),
+                    request = CreateDocumentRequest(mimeType = LogExporter.ZIP_MIME, fileName = prepared.fileName),
+                    onFallbackToLocal = { exportLogsToLocalFile(prepared) },
+                    logTag = "logs",
+                )
             }
 
             SettingId.UploadLogs -> {

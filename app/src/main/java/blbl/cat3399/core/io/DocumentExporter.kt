@@ -1,8 +1,9 @@
 package blbl.cat3399.core.io
 
 import android.content.Context
+import android.database.Cursor
 import android.net.Uri
-import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -22,10 +23,9 @@ object DocumentExporter {
         val value: T,
     )
 
-    fun <T> exportToTreeUri(
+    fun <T> exportToUri(
         context: Context,
-        treeUri: Uri,
-        mimeType: String,
+        uri: Uri,
         fileName: String,
         writeTo: (OutputStream) -> T,
     ): ExportResult<T> {
@@ -33,15 +33,19 @@ object DocumentExporter {
         val safeFileName = sanitizeFileName(fileName)
         if (safeFileName.isBlank()) throw IOException("导出文件名无效")
 
-        val outUri = createDocument(appContext, treeUri = treeUri, mimeType = mimeType, baseName = safeFileName)
         val value =
-            appContext.contentResolver.openOutputStream(outUri, "w")?.use { rawOut ->
+            appContext.contentResolver.openOutputStream(uri, "w")?.use { rawOut ->
                 BufferedOutputStream(rawOut, 32 * 1024).use { bufferedOut ->
                     writeTo(bufferedOut).also { bufferedOut.flush() }
                 }
             } ?: throw IOException("无法写入导出文件")
 
-        return ExportResult(fileName = safeFileName, uri = outUri, value = value)
+        val resolvedName =
+            resolveDisplayName(appContext, uri)
+                ?.let(::sanitizeFileName)
+                .takeUnless { it.isNullOrBlank() }
+                ?: safeFileName
+        return ExportResult(fileName = resolvedName, uri = uri, value = value)
     }
 
     fun <T> exportToLocalFile(
@@ -68,30 +72,6 @@ object DocumentExporter {
             }
 
         return LocalExportResult(fileName = outFile.name, file = outFile, value = value)
-    }
-
-    private fun createDocument(
-        context: Context,
-        treeUri: Uri,
-        mimeType: String,
-        baseName: String,
-    ): Uri {
-        val resolver = context.contentResolver
-        val treeDocId = DocumentsContract.getTreeDocumentId(treeUri)
-        val dirUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, treeDocId)
-
-        var attempt = 0
-        while (attempt <= 20) {
-            val name = appendAttemptSuffix(baseName = baseName, attempt = attempt)
-            try {
-                val created = DocumentsContract.createDocument(resolver, dirUri, mimeType, name)
-                if (created != null) return created
-            } catch (_: Throwable) {
-                // Try a different file name when the provider rejects duplicates.
-            }
-            attempt++
-        }
-        throw IOException("创建导出文件失败")
     }
 
     private fun createLocalFile(
@@ -131,5 +111,23 @@ object DocumentExporter {
         if (trimmed.isBlank()) return ""
         val noSeparators = trimmed.replace(Regex("[\\\\/\\r\\n\\t]"), "_")
         return noSeparators.take(96)
+    }
+
+    private fun resolveDisplayName(
+        context: Context,
+        uri: Uri,
+    ): String? {
+        return runCatching {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use null
+                cursor.getStringOrNull(OpenableColumns.DISPLAY_NAME)
+            }
+        }.getOrNull()
+    }
+
+    private fun Cursor.getStringOrNull(columnName: String): String? {
+        val index = getColumnIndex(columnName)
+        if (index < 0 || isNull(index)) return null
+        return getString(index)
     }
 }

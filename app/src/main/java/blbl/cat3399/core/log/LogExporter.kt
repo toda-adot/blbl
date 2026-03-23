@@ -3,7 +3,6 @@ package blbl.cat3399.core.log
 import android.content.Context
 import android.net.Uri
 import blbl.cat3399.core.io.DocumentExporter
-import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
@@ -14,7 +13,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 object LogExporter {
-    private const val ZIP_MIME = "application/zip"
+    const val ZIP_MIME = "application/zip"
 
     data class ZipExtra(
         /**
@@ -36,9 +35,9 @@ object LogExporter {
         val includedFiles: Int,
     )
 
-    fun exportToTreeUri(
+    fun exportToUri(
         context: Context,
-        treeUri: Uri,
+        uri: Uri,
         nowMs: Long = System.currentTimeMillis(),
         fileNameOverride: String? = null,
         extras: List<ZipExtra> = emptyList(),
@@ -60,10 +59,9 @@ object LogExporter {
 
         val fileName = resolveExportFileName(nowMs = nowMs, fileNameOverride = fileNameOverride)
         val result =
-            DocumentExporter.exportToTreeUri(
+            DocumentExporter.exportToUri(
                 context = appContext,
-                treeUri = treeUri,
-                mimeType = ZIP_MIME,
+                uri = uri,
                 fileName = fileName,
             ) { out ->
                 ZipOutputStream(out).use { zip ->
@@ -161,6 +159,11 @@ object LogExporter {
         val safe = sanitizeFileName(withExt)
         return safe.ifBlank { fallback }
     }
+
+    fun suggestExportFileName(
+        nowMs: Long = System.currentTimeMillis(),
+        fileNameOverride: String? = null,
+    ): String = resolveExportFileName(nowMs = nowMs, fileNameOverride = fileNameOverride)
 
     private fun sanitizeFileName(name: String): String {
         val trimmed = name.trim()
