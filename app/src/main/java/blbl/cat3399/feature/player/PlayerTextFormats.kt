@@ -1,17 +1,12 @@
 package blbl.cat3399.feature.player
 
+import blbl.cat3399.feature.settings.SettingsText
+import blbl.cat3399.feature.player.danmaku.DanmakuFontWeight
+import blbl.cat3399.feature.player.danmaku.DanmakuLaneDensity
 import org.json.JSONArray
 import java.util.Locale
 
-internal fun audioLabel(id: Int): String =
-    when (id) {
-        30251 -> "Hi-Res 无损"
-        30250 -> "杜比全景声"
-        30280 -> "192K"
-        30232 -> "132K"
-        30216 -> "64K"
-        else -> id.toString()
-    }
+internal fun audioLabel(id: Int): String = SettingsText.audioText(id)
 
 private val normalAudioOrder = intArrayOf(30216, 30232, 30280)
 
@@ -56,23 +51,7 @@ internal fun pickAudioIdByPreference(availableAudioIds: List<Int>, desiredAudioI
     return firstAvailableAudioId(available, intArrayOf(30280, 30232, 30216, 30251, 30250)).takeIf { it > 0 } ?: available.first()
 }
 
-internal fun qnLabel(qn: Int): String =
-    when (qn) {
-        16 -> "360P 流畅"
-        32 -> "480P 清晰"
-        64 -> "720P 高清"
-        74 -> "720P60 高帧率"
-        80 -> "1080P 高清"
-        100 -> "智能修复"
-        112 -> "1080P+ 高码率"
-        116 -> "1080P60 高帧率"
-        120 -> "4K 超清"
-        125 -> "HDR 真彩色"
-        126 -> "杜比视界"
-        127 -> "8K 超高清"
-        129 -> "HDR Vivid"
-        else -> qn.toString()
-    }
+internal fun qnLabel(qn: Int): String = SettingsText.qnText(qn)
 
 internal fun qnRank(qn: Int): Int {
     val order = intArrayOf(6, 16, 32, 64, 74, 80, 100, 112, 116, 120, 125, 126, 127, 129)
@@ -94,20 +73,17 @@ internal fun pickQnByQualityOrder(availableQns: List<Int>, desiredQn: Int): Int 
     return available.minBy { qnRank(it) }
 }
 
-internal fun areaText(area: Float): String =
-    when {
-        area >= 0.99f -> "不限"
-        area >= 0.78f -> "4/5"
-        area >= 0.71f -> "3/4"
-        area >= 0.62f -> "2/3"
-        area >= 0.55f -> "3/5"
-        area >= 0.45f -> "1/2"
-        area >= 0.36f -> "2/5"
-        area >= 0.29f -> "1/3"
-        area >= 0.22f -> "1/4"
-        area >= 0.19f -> "1/5"
-        else -> "1/6"
-    }
+internal fun areaText(area: Float): String = SettingsText.areaText(area)
+
+internal fun subtitleBottomPaddingText(fraction: Float): String = SettingsText.subtitleBottomPaddingText(fraction)
+
+internal fun subtitleBackgroundOpacityText(opacity: Float): String = SettingsText.subtitleBackgroundOpacityText(opacity)
+
+internal fun danmakuLaneDensityText(value: DanmakuLaneDensity): String = SettingsText.danmakuLaneDensityText(value.prefValue)
+
+internal fun danmakuFontWeightText(value: DanmakuFontWeight): String = SettingsText.danmakuFontWeightText(value.prefValue)
+
+internal fun aiLevelText(level: Int): String = SettingsText.aiLevelText(level)
 
 internal fun normalizeUrl(url: String): String {
     val u = url.trim()

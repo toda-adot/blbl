@@ -764,6 +764,14 @@ class PlayerActivity : BaseActivity() {
                 speedLevel = prefs.danmakuSpeed,
                 area = prefs.danmakuArea,
                 laneDensity = DanmakuLaneDensity.fromPrefValue(prefs.danmakuLaneDensity),
+                followBiliShield = prefs.danmakuFollowBiliShield,
+                aiShieldEnabled = prefs.danmakuAiShieldEnabled,
+                aiShieldLevel = prefs.danmakuAiShieldLevel,
+                allowScroll = prefs.danmakuAllowScroll,
+                allowTop = prefs.danmakuAllowTop,
+                allowBottom = prefs.danmakuAllowBottom,
+                allowColor = prefs.danmakuAllowColor,
+                allowSpecial = prefs.danmakuAllowSpecial,
             ),
             debugEnabled = prefs.playerDebugEnabled,
             engineKind = PlayerEngineKind.fromPrefValue(prefs.playerEngineKind),
@@ -2000,9 +2008,7 @@ class PlayerActivity : BaseActivity() {
         }
 
         binding.btnDanmaku.setOnClickListener {
-            session = session.copy(danmaku = session.danmaku.copy(enabled = !session.danmaku.enabled))
-            binding.danmakuView.invalidate()
-            updateDanmakuButton()
+            setDanmakuEnabled(!session.danmaku.enabled)
             setControlsVisible(true)
         }
 
@@ -2305,6 +2311,17 @@ class PlayerActivity : BaseActivity() {
         binding.btnDanmaku.isSelected = session.danmaku.enabled
     }
 
+    internal fun setDanmakuEnabled(enabled: Boolean) {
+        if (session.danmaku.enabled == enabled) return
+        session = session.copy(danmaku = session.danmaku.copy(enabled = enabled))
+        binding.danmakuView.invalidate()
+        updateDanmakuButton()
+        if (enabled) {
+            val positionMs = player?.currentPosition?.coerceAtLeast(0L) ?: 0L
+            requestDanmakuSegmentsForPosition(positionMs, immediate = true)
+        }
+    }
+
     internal fun updateSubtitleButton() {
         if (!subtitleAvailabilityKnown) {
             binding.btnSubtitle.isEnabled = true
@@ -2332,7 +2349,7 @@ class PlayerActivity : BaseActivity() {
         binding.btnSubtitle.imageTintList = ContextCompat.getColorStateList(this, colorRes)
     }
 
-    private fun toggleSubtitles(exo: ExoPlayer) {
+    internal fun toggleSubtitles(exo: ExoPlayer) {
         if (!subtitleAvailabilityKnown) {
             AppToast.show(this, "字幕信息加载中")
             return
@@ -3102,9 +3119,9 @@ class PlayerActivity : BaseActivity() {
 
     internal suspend fun prepareDanmakuMeta(cid: Long, aid: Long?, trace: PlaybackTrace? = null): DanmakuMeta {
         trace?.log("danmakuMeta:prepare:start", "cid=$cid aid=${aid ?: -1}")
+        val danmakuSession = session.danmaku
         return withContext(Dispatchers.IO) {
-            val prefs = BiliClient.prefs
-            val followBili = prefs.danmakuFollowBiliShield
+            val followBili = danmakuSession.followBiliShield
             val hasSess = BiliClient.cookies.hasSessData()
             if (session.debugEnabled) {
                 AppLog.d("Player", "danmakuMeta cid=$cid aid=${aid ?: -1} followBili=$followBili hasSess=$hasSess")
@@ -3138,13 +3155,13 @@ class PlayerActivity : BaseActivity() {
             }
             val setting = dmView?.setting
             val shield = DanmakuShield(
-                allowScroll = prefs.danmakuAllowScroll && (setting?.allowScroll ?: true),
-                allowTop = prefs.danmakuAllowTop && (setting?.allowTop ?: true),
-                allowBottom = prefs.danmakuAllowBottom && (setting?.allowBottom ?: true),
-                allowColor = prefs.danmakuAllowColor && (setting?.allowColor ?: true),
-                allowSpecial = prefs.danmakuAllowSpecial && (setting?.allowSpecial ?: true),
-                aiEnabled = prefs.danmakuAiShieldEnabled || (setting?.aiEnabled ?: false),
-                aiLevel = maxOf(prefs.danmakuAiShieldLevel, setting?.aiLevel ?: 0),
+                allowScroll = danmakuSession.allowScroll && (setting?.allowScroll ?: true),
+                allowTop = danmakuSession.allowTop && (setting?.allowTop ?: true),
+                allowBottom = danmakuSession.allowBottom && (setting?.allowBottom ?: true),
+                allowColor = danmakuSession.allowColor && (setting?.allowColor ?: true),
+                allowSpecial = danmakuSession.allowSpecial && (setting?.allowSpecial ?: true),
+                aiEnabled = danmakuSession.aiShieldEnabled || (setting?.aiEnabled ?: false),
+                aiLevel = maxOf(danmakuSession.aiShieldLevel, setting?.aiLevel ?: 0),
                 keywords = userFilter?.keywords.orEmpty(),
                 regexes = userFilter?.regexes.orEmpty(),
                 blockedUserMidHashes = userFilter?.blockedUserMidHashes.orEmpty(),
@@ -3155,7 +3172,11 @@ class PlayerActivity : BaseActivity() {
                 "Player",
                 "danmaku cid=$cid segTotal=$segmentTotal segSizeMs=$segmentSizeMs followBili=$followBili hasSess=$hasSess hasDmSetting=${setting != null} filters=kw${userFilter?.keywords?.size ?: 0},re${userFilter?.regexes?.size ?: 0},user${userFilter?.blockedUserMidHashes?.size ?: 0}",
             )
-            DanmakuMeta(shield = shield, segmentTotal = segmentTotal, segmentSizeMs = segmentSizeMs).also {
+            DanmakuMeta(
+                shield = shield,
+                segmentTotal = segmentTotal,
+                segmentSizeMs = segmentSizeMs,
+            ).also {
                 trace?.log("danmakuMeta:prepare:done")
             }
         }
@@ -3168,6 +3189,33 @@ class PlayerActivity : BaseActivity() {
         danmakuSegmentSizeMs = meta.segmentSizeMs.coerceAtLeast(1)
         danmakuLoadedSegments.clear()
         danmakuSegmentItems.clear()
+    }
+
+    internal fun reloadDanmakuForCurrentSession() {
+        val positionMs = player?.currentPosition?.coerceAtLeast(0L) ?: 0L
+        val cid = currentCid.takeIf { it > 0L }
+        if (cid == null) {
+            cancelDanmakuLoading(reason = "settings_change_no_cid")
+            danmakuShield = null
+            danmakuLoadedSegments.clear()
+            danmakuSegmentItems.clear()
+            binding.danmakuView.setDanmakus(emptyList())
+            binding.danmakuView.notifySeek(positionMs)
+            return
+        }
+
+        lifecycleScope.launch {
+            runCatching {
+                val meta = prepareDanmakuMeta(cid = cid, aid = currentAid)
+                applyDanmakuMeta(meta)
+                binding.danmakuView.setDanmakus(emptyList())
+                binding.danmakuView.notifySeek(positionMs)
+                requestDanmakuSegmentsForPosition(positionMs, immediate = true)
+            }.onFailure { throwable ->
+                if (throwable is CancellationException) throw throwable
+                AppLog.w("Player", "reloadDanmakuForCurrentSession failed", throwable)
+            }
+        }
     }
 
     internal fun requestDanmakuSegmentsForPosition(positionMs: Long, immediate: Boolean) {

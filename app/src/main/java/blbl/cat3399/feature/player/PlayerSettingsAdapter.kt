@@ -1,6 +1,7 @@
 package blbl.cat3399.feature.player
 
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
@@ -14,9 +15,9 @@ class PlayerSettingsAdapter(
     data class SettingItem(
         val key: String,
         val title: String,
-        val subtitle: String,
+        val subtitle: String?,
     ) {
-        constructor(title: String, subtitle: String) : this(key = title, title = title, subtitle = subtitle)
+        constructor(title: String, subtitle: String? = null) : this(key = title, title = title, subtitle = subtitle)
     }
 
     init {
@@ -71,7 +72,8 @@ class PlayerSettingsAdapter(
     class Vh(private val binding: ItemPlayerSettingBinding) : RecyclerView.ViewHolder(binding.root) {
         fun bind(item: SettingItem, onClick: (SettingItem) -> Unit) {
             binding.tvTitle.text = item.title
-            binding.tvSubtitle.text = item.subtitle
+            binding.tvSubtitle.text = item.subtitle.orEmpty()
+            binding.tvSubtitle.visibility = if (item.subtitle.isNullOrBlank()) View.GONE else View.VISIBLE
             binding.root.setOnClickListener { onClick(item) }
         }
     }

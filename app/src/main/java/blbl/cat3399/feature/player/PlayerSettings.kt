@@ -15,6 +15,9 @@ import blbl.cat3399.core.prefs.AppPrefs
 import blbl.cat3399.core.prefs.PlayerPlaybackModes
 import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.popup.AppPopup
+import blbl.cat3399.feature.player.danmaku.DanmakuFontWeight
+import blbl.cat3399.feature.player.danmaku.DanmakuLaneDensity
+import blbl.cat3399.feature.player.danmaku.DanmakuSessionSettings
 import blbl.cat3399.feature.player.engine.BlblPlayerEngine
 import blbl.cat3399.feature.player.engine.ExoPlayerEngine
 import blbl.cat3399.feature.player.engine.IjkPlayerPluginUi
@@ -33,15 +36,28 @@ internal object PlayerSettingKeys {
     const val AUDIO_BALANCE = "audio_balance"
     const val PLAYBACK_MODE = "playback_mode"
     const val SUBTITLE_MENU = "subtitle_menu"
+    const val SUBTITLE_ENABLED = "subtitle_enabled"
     const val SUBTITLE_LANG = "subtitle_lang"
     const val SUBTITLE_TEXT_SIZE = "subtitle_text_size"
     const val SUBTITLE_BOTTOM_PADDING = "subtitle_bottom_padding"
     const val SUBTITLE_BACKGROUND_OPACITY = "subtitle_background_opacity"
     const val DANMAKU_MENU = "danmaku_menu"
+    const val DANMAKU_ENABLED = "danmaku_enabled"
+    const val DANMAKU_SPEED = "danmaku_speed"
     const val DANMAKU_OPACITY = "danmaku_opacity"
     const val DANMAKU_TEXT_SIZE = "danmaku_text_size"
-    const val DANMAKU_SPEED = "danmaku_speed"
     const val DANMAKU_AREA = "danmaku_area"
+    const val DANMAKU_STROKE_WIDTH = "danmaku_stroke_width"
+    const val DANMAKU_FONT_WEIGHT = "danmaku_font_weight"
+    const val DANMAKU_LANE_DENSITY = "danmaku_lane_density"
+    const val DANMAKU_FOLLOW_BILI_SHIELD = "danmaku_follow_bili_shield"
+    const val DANMAKU_AI_SHIELD_ENABLED = "danmaku_ai_shield_enabled"
+    const val DANMAKU_AI_SHIELD_LEVEL = "danmaku_ai_shield_level"
+    const val DANMAKU_ALLOW_SCROLL = "danmaku_allow_scroll"
+    const val DANMAKU_ALLOW_TOP = "danmaku_allow_top"
+    const val DANMAKU_ALLOW_BOTTOM = "danmaku_allow_bottom"
+    const val DANMAKU_ALLOW_COLOR = "danmaku_allow_color"
+    const val DANMAKU_ALLOW_SPECIAL = "danmaku_allow_special"
     const val DEBUG_INFO = "debug_info"
     const val PERSISTENT_BOTTOM_PROGRESS = "persistent_bottom_progress"
 }
@@ -51,6 +67,14 @@ internal enum class PlayerSettingsMenu {
     SUBTITLE,
     DANMAKU,
 }
+
+private fun settingItem(
+    key: String,
+    title: String,
+    subtitle: String? = null,
+): PlayerSettingsAdapter.SettingItem = PlayerSettingsAdapter.SettingItem(key = key, title = title, subtitle = subtitle)
+
+private fun Boolean.switchText(): String = if (this) "开" else "关"
 
 internal fun PlayerActivity.handleSettingsItemClick(item: PlayerSettingsAdapter.SettingItem) {
     when (item.key) {
@@ -62,26 +86,53 @@ internal fun PlayerActivity.handleSettingsItemClick(item: PlayerSettingsAdapter.
         PlayerSettingKeys.AUDIO_BALANCE -> showAudioBalanceDialog()
         PlayerSettingKeys.PLAYBACK_MODE -> showPlaybackModeDialog()
         PlayerSettingKeys.SUBTITLE_MENU -> showSubtitleSettingsMenu()
+        PlayerSettingKeys.SUBTITLE_ENABLED -> {
+            val exo = (player as? ExoPlayerEngine)?.exoPlayer
+            if (exo == null) {
+                AppToast.show(this, "当前播放器内核不支持字幕")
+                return
+            }
+            toggleSubtitles(exo)
+            refreshSettingsPanel()
+        }
+
         PlayerSettingKeys.SUBTITLE_LANG -> showSubtitleLangDialog()
         PlayerSettingKeys.SUBTITLE_TEXT_SIZE -> showSubtitleTextSizeDialog()
         PlayerSettingKeys.SUBTITLE_BOTTOM_PADDING -> showSubtitleBottomPaddingDialog()
         PlayerSettingKeys.SUBTITLE_BACKGROUND_OPACITY -> showSubtitleBackgroundOpacityDialog()
         PlayerSettingKeys.DANMAKU_MENU -> showDanmakuSettingsMenu()
+        PlayerSettingKeys.DANMAKU_ENABLED -> {
+            setDanmakuEnabled(!session.danmaku.enabled)
+            refreshSettingsPanel()
+        }
+
+        PlayerSettingKeys.DANMAKU_SPEED -> showDanmakuSpeedDialog()
         PlayerSettingKeys.DANMAKU_OPACITY -> showDanmakuOpacityDialog()
         PlayerSettingKeys.DANMAKU_TEXT_SIZE -> showDanmakuTextSizeDialog()
-        PlayerSettingKeys.DANMAKU_SPEED -> showDanmakuSpeedDialog()
         PlayerSettingKeys.DANMAKU_AREA -> showDanmakuAreaDialog()
+        PlayerSettingKeys.DANMAKU_STROKE_WIDTH -> showDanmakuStrokeWidthDialog()
+        PlayerSettingKeys.DANMAKU_FONT_WEIGHT -> showDanmakuFontWeightDialog()
+        PlayerSettingKeys.DANMAKU_LANE_DENSITY -> showDanmakuLaneDensityDialog()
+        PlayerSettingKeys.DANMAKU_FOLLOW_BILI_SHIELD -> toggleDanmakuFlag { copy(followBiliShield = !followBiliShield) }
+        PlayerSettingKeys.DANMAKU_AI_SHIELD_ENABLED -> toggleDanmakuFlag { copy(aiShieldEnabled = !aiShieldEnabled) }
+        PlayerSettingKeys.DANMAKU_AI_SHIELD_LEVEL -> showDanmakuAiShieldLevelDialog()
+        PlayerSettingKeys.DANMAKU_ALLOW_SCROLL -> toggleDanmakuFlag { copy(allowScroll = !allowScroll) }
+        PlayerSettingKeys.DANMAKU_ALLOW_TOP -> toggleDanmakuFlag { copy(allowTop = !allowTop) }
+        PlayerSettingKeys.DANMAKU_ALLOW_BOTTOM -> toggleDanmakuFlag { copy(allowBottom = !allowBottom) }
+        PlayerSettingKeys.DANMAKU_ALLOW_COLOR -> toggleDanmakuFlag { copy(allowColor = !allowColor) }
+        PlayerSettingKeys.DANMAKU_ALLOW_SPECIAL -> toggleDanmakuFlag { copy(allowSpecial = !allowSpecial) }
+
         PlayerSettingKeys.DEBUG_INFO -> {
             session = session.copy(debugEnabled = !session.debugEnabled)
             updateDebugOverlay()
-            (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
+            refreshSettingsPanel()
         }
 
         PlayerSettingKeys.PERSISTENT_BOTTOM_PROGRESS -> {
             val appPrefs = BiliClient.prefs
             appPrefs.playerPersistentBottomProgressEnabled = !appPrefs.playerPersistentBottomProgressEnabled
             updatePersistentBottomProgressBarVisibility()
-            (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
+            refreshSettingsPanel()
         }
 
         else -> AppToast.show(this, "暂未实现：${item.title}")
@@ -96,14 +147,14 @@ internal fun PlayerActivity.showSettingsRoot(focusKey: String? = null) {
 internal fun PlayerActivity.showSubtitleSettingsMenu() {
     settingsPanelMenu = PlayerSettingsMenu.SUBTITLE
     (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let {
-        refreshSettings(it, PlayerSettingKeys.SUBTITLE_LANG)
+        refreshSettings(it, PlayerSettingKeys.SUBTITLE_ENABLED)
     }
 }
 
 internal fun PlayerActivity.showDanmakuSettingsMenu() {
     settingsPanelMenu = PlayerSettingsMenu.DANMAKU
     (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let {
-        refreshSettings(it, PlayerSettingKeys.DANMAKU_OPACITY)
+        refreshSettings(it, PlayerSettingKeys.DANMAKU_ENABLED)
     }
 }
 
@@ -167,157 +218,62 @@ private fun PlayerActivity.buildRootSettingsItems(
     prefs: AppPrefs,
     subtitleSupported: Boolean,
 ): List<PlayerSettingsAdapter.SettingItem> {
-    return buildList {
-        add(
-            PlayerSettingsAdapter.SettingItem(
-                key = PlayerSettingKeys.RESOLUTION,
-                title = "分辨率",
-                subtitle = resolutionSubtitle(),
-            ),
-        )
-        add(
-            PlayerSettingsAdapter.SettingItem(
-                key = PlayerSettingKeys.AUDIO_TRACK,
-                title = "音轨",
-                subtitle = audioSubtitle(),
-            ),
-        )
-        add(
-            PlayerSettingsAdapter.SettingItem(
-                key = PlayerSettingKeys.CODEC,
-                title = "视频编码",
-                subtitle = session.preferCodec,
-            ),
-        )
-        add(
-            PlayerSettingsAdapter.SettingItem(
-                key = PlayerSettingKeys.PLAYBACK_SPEED,
-                title = "播放速度",
-                subtitle = String.format(Locale.US, "%.2fx", session.playbackSpeed),
-            ),
-        )
-        add(
-            PlayerSettingsAdapter.SettingItem(
-                key = PlayerSettingKeys.AUDIO_BALANCE,
-                title = "音频平衡",
-                subtitle = AudioBalanceLevel.fromPrefValue(prefs.playerAudioBalanceLevel).label,
-            ),
-        )
-        add(
-            PlayerSettingsAdapter.SettingItem(
-                key = PlayerSettingKeys.PLAYBACK_MODE,
-                title = "播放模式",
-                subtitle = playbackModeSubtitle(),
-            ),
-        )
-        if (subtitleSupported) {
-            add(
-                PlayerSettingsAdapter.SettingItem(
-                    key = PlayerSettingKeys.SUBTITLE_MENU,
-                    title = "字幕设置",
-                    subtitle = "语言/字体/间距/背景",
-                ),
-            )
-        }
-        add(
-            PlayerSettingsAdapter.SettingItem(
-                key = PlayerSettingKeys.DANMAKU_MENU,
-                title = "弹幕设置",
-                subtitle = "透明度/字体/速度/区域",
-            ),
-        )
-        add(
-            PlayerSettingsAdapter.SettingItem(
-                key = PlayerSettingKeys.DEBUG_INFO,
-                title = "调试信息",
-                subtitle = if (session.debugEnabled) "开" else "关",
-            ),
-        )
-        add(
-            PlayerSettingsAdapter.SettingItem(
-                key = PlayerSettingKeys.PERSISTENT_BOTTOM_PROGRESS,
-                title = "底部常驻进度条",
-                subtitle = if (prefs.playerPersistentBottomProgressEnabled) "开" else "关",
-            ),
-        )
-        add(
-            PlayerSettingsAdapter.SettingItem(
-                key = PlayerSettingKeys.PLAYER_ENGINE,
-                title = "播放器内核",
-                subtitle = playerEngineSubtitle(),
-            ),
-        )
-    }
+    return listOfNotNull(
+        settingItem(PlayerSettingKeys.RESOLUTION, "分辨率", resolutionSubtitle()),
+        settingItem(PlayerSettingKeys.AUDIO_TRACK, "音轨", audioSubtitle()),
+        settingItem(PlayerSettingKeys.CODEC, "视频编码", session.preferCodec),
+        settingItem(PlayerSettingKeys.PLAYBACK_SPEED, "播放速度", String.format(Locale.US, "%.2fx", session.playbackSpeed)),
+        settingItem(PlayerSettingKeys.PLAYBACK_MODE, "播放模式", playbackModeSubtitle()),
+        subtitleSupported.takeIf { it }?.let { settingItem(PlayerSettingKeys.SUBTITLE_MENU, "字幕设置", ">") },
+        settingItem(PlayerSettingKeys.DANMAKU_MENU, "弹幕设置", ">"),
+        settingItem(PlayerSettingKeys.AUDIO_BALANCE, "音频平衡", AudioBalanceLevel.fromPrefValue(prefs.playerAudioBalanceLevel).label),
+        settingItem(
+            PlayerSettingKeys.PERSISTENT_BOTTOM_PROGRESS,
+            "底部常驻进度条",
+            prefs.playerPersistentBottomProgressEnabled.switchText(),
+        ),
+        settingItem(PlayerSettingKeys.PLAYER_ENGINE, "播放器内核", playerEngineSubtitle()),
+        settingItem(PlayerSettingKeys.DEBUG_INFO, "调试信息", session.debugEnabled.switchText()),
+    )
 }
 
 private fun PlayerActivity.buildSubtitleSettingsItems(): List<PlayerSettingsAdapter.SettingItem> {
-    val items =
-        buildList {
-            add(
-                PlayerSettingsAdapter.SettingItem(
-                    key = PlayerSettingKeys.SUBTITLE_LANG,
-                    title = "字幕语言",
-                    subtitle = subtitleLangSubtitle(),
-                ),
-            )
-            add(
-                PlayerSettingsAdapter.SettingItem(
-                    key = PlayerSettingKeys.SUBTITLE_TEXT_SIZE,
-                    title = "字幕字体大小",
-                    subtitle = session.subtitleTextSizeSp.toInt().toString(),
-                ),
-            )
-            add(
-                PlayerSettingsAdapter.SettingItem(
-                    key = PlayerSettingKeys.SUBTITLE_BOTTOM_PADDING,
-                    title = "字幕底部间距",
-                    subtitle = "${(session.subtitleBottomPaddingFraction * 100f).roundToInt()}%",
-                ),
-            )
-            add(
-                PlayerSettingsAdapter.SettingItem(
-                    key = PlayerSettingKeys.SUBTITLE_BACKGROUND_OPACITY,
-                    title = "字幕背景透明度",
-                    subtitle = String.format(Locale.US, "%.2f", session.subtitleBackgroundOpacity),
-                ),
-            )
-        }
-    return items
+    return listOf(
+        settingItem(PlayerSettingKeys.SUBTITLE_ENABLED, "字幕开关", session.subtitleEnabled.switchText()),
+        settingItem(PlayerSettingKeys.SUBTITLE_LANG, "字幕语言", subtitleLangSubtitle()),
+        settingItem(PlayerSettingKeys.SUBTITLE_TEXT_SIZE, "字幕字体大小", session.subtitleTextSizeSp.toInt().toString()),
+        settingItem(
+            PlayerSettingKeys.SUBTITLE_BOTTOM_PADDING,
+            "字幕底部间距",
+            subtitleBottomPaddingText(session.subtitleBottomPaddingFraction),
+        ),
+        settingItem(
+            PlayerSettingKeys.SUBTITLE_BACKGROUND_OPACITY,
+            "字幕背景透明度",
+            subtitleBackgroundOpacityText(session.subtitleBackgroundOpacity),
+        ),
+    )
 }
 
 private fun PlayerActivity.buildDanmakuSettingsItems(): List<PlayerSettingsAdapter.SettingItem> {
-    val items =
-        buildList {
-            add(
-                PlayerSettingsAdapter.SettingItem(
-                    key = PlayerSettingKeys.DANMAKU_OPACITY,
-                    title = "弹幕透明度",
-                    subtitle = String.format(Locale.US, "%.2f", session.danmaku.opacity),
-                ),
-            )
-            add(
-                PlayerSettingsAdapter.SettingItem(
-                    key = PlayerSettingKeys.DANMAKU_TEXT_SIZE,
-                    title = "弹幕字体大小",
-                    subtitle = session.danmaku.textSizeSp.toInt().toString(),
-                ),
-            )
-            add(
-                PlayerSettingsAdapter.SettingItem(
-                    key = PlayerSettingKeys.DANMAKU_SPEED,
-                    title = "弹幕速度",
-                    subtitle = session.danmaku.speedLevel.toString(),
-                ),
-            )
-            add(
-                PlayerSettingsAdapter.SettingItem(
-                    key = PlayerSettingKeys.DANMAKU_AREA,
-                    title = "弹幕区域",
-                    subtitle = areaText(session.danmaku.area),
-                ),
-            )
-        }
-    return items
+    return listOf(
+        settingItem(PlayerSettingKeys.DANMAKU_ENABLED, "弹幕开关", session.danmaku.enabled.switchText()),
+        settingItem(PlayerSettingKeys.DANMAKU_SPEED, "弹幕速度", session.danmaku.speedLevel.toString()),
+        settingItem(PlayerSettingKeys.DANMAKU_OPACITY, "弹幕透明度", String.format(Locale.US, "%.2f", session.danmaku.opacity)),
+        settingItem(PlayerSettingKeys.DANMAKU_TEXT_SIZE, "弹幕字体大小", session.danmaku.textSizeSp.toInt().toString()),
+        settingItem(PlayerSettingKeys.DANMAKU_AREA, "弹幕占屏比", areaText(session.danmaku.area)),
+        settingItem(PlayerSettingKeys.DANMAKU_STROKE_WIDTH, "弹幕文字描边粗细", session.danmaku.strokeWidthPx.toString()),
+        settingItem(PlayerSettingKeys.DANMAKU_FONT_WEIGHT, "字体粗细", danmakuFontWeightText(session.danmaku.fontWeight)),
+        settingItem(PlayerSettingKeys.DANMAKU_LANE_DENSITY, "轨道密度", danmakuLaneDensityText(session.danmaku.laneDensity)),
+        settingItem(PlayerSettingKeys.DANMAKU_FOLLOW_BILI_SHIELD, "跟随B站弹幕屏蔽", session.danmaku.followBiliShield.switchText()),
+        settingItem(PlayerSettingKeys.DANMAKU_AI_SHIELD_ENABLED, "智能云屏蔽", session.danmaku.aiShieldEnabled.switchText()),
+        settingItem(PlayerSettingKeys.DANMAKU_AI_SHIELD_LEVEL, "智能云屏蔽等级", aiLevelText(session.danmaku.aiShieldLevel)),
+        settingItem(PlayerSettingKeys.DANMAKU_ALLOW_SCROLL, "允许滚动弹幕", session.danmaku.allowScroll.switchText()),
+        settingItem(PlayerSettingKeys.DANMAKU_ALLOW_TOP, "允许顶部悬停弹幕", session.danmaku.allowTop.switchText()),
+        settingItem(PlayerSettingKeys.DANMAKU_ALLOW_BOTTOM, "允许底部悬停弹幕", session.danmaku.allowBottom.switchText()),
+        settingItem(PlayerSettingKeys.DANMAKU_ALLOW_COLOR, "允许彩色弹幕", session.danmaku.allowColor.switchText()),
+        settingItem(PlayerSettingKeys.DANMAKU_ALLOW_SPECIAL, "允许特殊弹幕", session.danmaku.allowSpecial.switchText()),
+    )
 }
 
 private fun PlayerActivity.playerEngineSubtitle(): String {
@@ -429,67 +385,117 @@ private inline fun PlayerActivity.showSettingsSingleChoiceDialog(
     }
 }
 
+private inline fun <T> PlayerActivity.showSettingsChoiceDialog(
+    title: CharSequence,
+    options: List<T>,
+    checkedIndex: Int,
+    crossinline label: (T) -> String = { it.toString() },
+    crossinline onPicked: (T) -> Unit,
+) {
+    showSettingsSingleChoiceDialog(
+        title = title,
+        items = options.map(label),
+        checkedIndex = checkedIndex,
+    ) { which, _ ->
+        options.getOrNull(which)?.let(onPicked)
+    }
+}
+
+private fun PlayerActivity.refreshSettingsPanel() {
+    (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
+}
+
+private inline fun PlayerActivity.updateSubtitleSettings(
+    transform: (PlayerSessionSettings) -> PlayerSessionSettings,
+    apply: PlayerActivity.() -> Unit = {},
+) {
+    session = transform(session)
+    apply()
+    refreshSettingsPanel()
+}
+
+private inline fun PlayerActivity.updateDanmakuSettings(
+    reloadDanmaku: Boolean = false,
+    transform: (DanmakuSessionSettings) -> DanmakuSessionSettings,
+) {
+    session = session.copy(danmaku = transform(session.danmaku))
+    refreshSettingsPanel()
+    if (reloadDanmaku) reloadDanmakuForCurrentSession()
+}
+
+private inline fun PlayerActivity.toggleDanmakuFlag(
+    transform: DanmakuSessionSettings.() -> DanmakuSessionSettings,
+) {
+    updateDanmakuSettings(reloadDanmaku = true) { it.transform() }
+}
+
+private inline fun PlayerActivity.updateDanmakuAppearance(
+    transform: DanmakuSessionSettings.() -> DanmakuSessionSettings,
+) {
+    session = session.copy(danmaku = session.danmaku.transform())
+    refreshDanmakuAppearance()
+}
+
+private fun PlayerActivity.refreshDanmakuAppearance() {
+    binding.danmakuView.invalidate()
+    refreshSettingsPanel()
+}
+
 internal fun PlayerActivity.showResolutionDialog() {
     // Follow docs: qn list for resolution/framerate.
     // Keep the full list so user can force-pick even if the server later falls back.
-    val docQns = listOf(16, 32, 64, 74, 80, 100, 112, 116, 120, 125, 126, 127, 129)
+    val docQns = PlaybackSettingChoices.resolutionQns
     val available = lastAvailableQns.toSet()
-    val options =
-        docQns.map { qn ->
-            val label = qnLabel(qn)
-            if (available.contains(qn)) "${label}（可用）" else label
-        }
-
     val currentQn =
         session.actualQn.takeIf { it > 0 }
             ?: session.targetQn.takeIf { it > 0 }
             ?: session.preferredQn
     val currentIndex = docQns.indexOfFirst { it == currentQn }.takeIf { it >= 0 } ?: 0
-    showSettingsSingleChoiceDialog(
+    showSettingsChoiceDialog(
         title = "分辨率",
-        items = options,
+        options = docQns,
         checkedIndex = currentIndex,
-    ) { which, _ ->
-        val qn = docQns.getOrNull(which) ?: return@showSettingsSingleChoiceDialog
+        label = { qn ->
+            val text = qnLabel(qn)
+            if (available.contains(qn)) "${text}（可用）" else text
+        },
+    ) { qn ->
         session =
             if (qn == session.preferredQn) {
                 session.copy(targetQn = 0)
             } else {
                 session.copy(targetQn = qn)
             }
-        refreshSettings(binding.recyclerSettings.adapter as PlayerSettingsAdapter)
+        refreshSettingsPanel()
         reloadStream(keepPosition = true)
     }
 }
 
 internal fun PlayerActivity.showAudioDialog() {
-    val docIds = listOf(30251, 30250, 30280, 30232, 30216)
+    val docIds = PlaybackSettingChoices.audioTrackIds
     val available = lastAvailableAudioIds.toSet()
-    val options =
-        docIds.map { id ->
-            val label = audioLabel(id)
-            if (available.contains(id)) "${label}（可用）" else label
-        }
-
     val currentId =
         session.actualAudioId.takeIf { it > 0 }
             ?: session.targetAudioId.takeIf { it > 0 }
             ?: session.preferAudioId
     val currentIndex = docIds.indexOfFirst { it == currentId }.takeIf { it >= 0 } ?: 0
 
-    showSettingsSingleChoiceDialog(
+    showSettingsChoiceDialog(
         title = "音轨",
-        items = options,
+        options = docIds,
         checkedIndex = currentIndex,
-    ) { which, _ ->
-        val id = docIds.getOrNull(which) ?: return@showSettingsSingleChoiceDialog
+        label = { id ->
+            val text = audioLabel(id)
+            if (available.contains(id)) "${text}（可用）" else text
+        },
+    ) { id ->
         session =
             if (id == session.preferAudioId) {
                 session.copy(targetAudioId = 0)
             } else {
                 session.copy(targetAudioId = id)
             }
-        refreshSettings(binding.recyclerSettings.adapter as PlayerSettingsAdapter)
+        refreshSettingsPanel()
         reloadStream(keepPosition = true)
     }
 }
@@ -497,31 +503,29 @@ internal fun PlayerActivity.showAudioDialog() {
 internal fun PlayerActivity.showCodecDialog() {
     val options = arrayOf("AVC", "HEVC", "AV1")
     val current = options.indexOf(session.preferCodec).coerceAtLeast(0)
-    showSettingsSingleChoiceDialog(
+    showSettingsChoiceDialog(
         title = "视频编码",
-        items = options.toList(),
+        options = options.toList(),
         checkedIndex = current,
-    ) { which, _ ->
-        val selected = options.getOrNull(which) ?: "AVC"
+    ) { selected ->
         session = session.copy(preferCodec = selected)
-        refreshSettings(binding.recyclerSettings.adapter as PlayerSettingsAdapter)
+        refreshSettingsPanel()
         reloadStream(keepPosition = true)
     }
 }
 
 internal fun PlayerActivity.showSpeedDialog() {
-    val options = arrayOf("0.50x", "0.75x", "1.00x", "1.25x", "1.50x", "2.00x")
-    val current = options.indexOf(String.format(Locale.US, "%.2fx", session.playbackSpeed)).let { if (it >= 0) it else 2 }
-    showSettingsSingleChoiceDialog(
+    val options = PlaybackSettingChoices.playbackSpeeds
+    val current = options.indexOf(session.playbackSpeed).takeIf { it >= 0 } ?: 2
+    showSettingsChoiceDialog(
         title = "播放速度",
-        items = options.toList(),
+        options = options,
         checkedIndex = current,
-    ) { which, _ ->
-        val selected = options.getOrNull(which) ?: "1.00x"
-        val v = selected.removeSuffix("x").toFloatOrNull() ?: 1.0f
+        label = { String.format(Locale.US, "%.2fx", it) },
+    ) { v ->
         session = session.copy(playbackSpeed = v)
         player?.setPlaybackSpeed(v)
-        refreshSettings(binding.recyclerSettings.adapter as PlayerSettingsAdapter)
+        refreshSettingsPanel()
     }
 }
 
@@ -531,12 +535,12 @@ internal fun PlayerActivity.showAudioBalanceDialog() {
     val current = AudioBalanceLevel.fromPrefValue(prefs.playerAudioBalanceLevel)
     val checked = options.indexOf(current).takeIf { it >= 0 } ?: 0
 
-    showSettingsSingleChoiceDialog(
+    showSettingsChoiceDialog(
         title = "音频平衡",
-        items = options.map { it.label },
+        options = options,
         checkedIndex = checked,
-    ) { which, _ ->
-        val picked = options.getOrNull(which) ?: AudioBalanceLevel.Off
+        label = AudioBalanceLevel::label,
+    ) { picked ->
         prefs.playerAudioBalanceLevel = picked.prefValue
         val engine = player
         if (engine is ExoPlayerEngine) {
@@ -545,7 +549,7 @@ internal fun PlayerActivity.showAudioBalanceDialog() {
         } else {
             AppToast.show(this, "当前播放器内核不支持音频平衡")
         }
-        (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
+        refreshSettingsPanel()
     }
 }
 
@@ -592,24 +596,23 @@ internal fun PlayerActivity.applyPlaybackMode(engine: BlblPlayerEngine) {
 internal fun PlayerActivity.showPlaybackModeDialog() {
     val engine = player ?: return
     val modeCodes = PlayerPlaybackModes.ordered
-    val items = modeCodes.map(PlayerPlaybackModes::label)
     val checked = modeCodes.indexOf(resolvedPlaybackMode()).takeIf { it >= 0 } ?: 0
-    showSettingsSingleChoiceDialog(
+    showSettingsChoiceDialog(
         title = "播放模式",
-        items = items,
+        options = modeCodes,
         checkedIndex = checked,
-    ) { which, _ ->
-        val pickedCode = modeCodes.getOrElse(which) { AppPrefs.PLAYER_PLAYBACK_MODE_NONE }
+        label = PlayerPlaybackModes::label,
+    ) { pickedCode ->
         val defaultCode = defaultPlaybackModeCode()
         session =
             if (pickedCode == defaultCode) {
                 session.copy(playbackModeOverride = null)
             } else {
                 session.copy(playbackModeOverride = pickedCode)
-            }
+        }
         applyPlaybackMode(engine)
         updatePlaylistControls()
-        refreshSettings(binding.recyclerSettings.adapter as PlayerSettingsAdapter)
+        refreshSettingsPanel()
     }
 }
 
@@ -699,59 +702,55 @@ internal fun PlayerActivity.showSubtitleLangDialog() {
 }
 
 internal fun PlayerActivity.showSubtitleTextSizeDialog() {
-    val options = (10..60 step 2).toList()
-    val items = options.map { it.toString() }.toTypedArray()
+    val options = PlaybackSettingChoices.subtitleTextSizes
     val current =
         options.indices.minByOrNull { abs(options[it].toFloat() - session.subtitleTextSizeSp) }
             ?: options.indexOf(26).takeIf { it >= 0 }
             ?: 0
-    showSettingsSingleChoiceDialog(
+    showSettingsChoiceDialog(
         title = "字幕字体大小",
-        items = items.toList(),
+        options = options,
         checkedIndex = current,
-    ) { which, _ ->
-        val v = (options.getOrNull(which) ?: session.subtitleTextSizeSp.toInt()).toFloat()
-        session = session.copy(subtitleTextSizeSp = v)
-        applySubtitleTextSize()
-        (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
+    ) { picked ->
+        updateSubtitleSettings(
+            transform = { it.copy(subtitleTextSizeSp = picked.toFloat()) },
+            apply = { applySubtitleTextSize() },
+        )
     }
 }
 
 internal fun PlayerActivity.showSubtitleBottomPaddingDialog() {
-    val options = (0..30 step 2).toList()
-    val items = options.map { "${it}%" }
+    val options = PlaybackSettingChoices.subtitleBottomPaddingPercents
     val current =
         options.indices.minByOrNull { abs(options[it] / 100f - session.subtitleBottomPaddingFraction) }
             ?: options.indexOf(16).takeIf { it >= 0 }
             ?: 0
-    showSettingsSingleChoiceDialog(
+    showSettingsChoiceDialog(
         title = "字幕底部间距",
-        items = items,
+        options = options,
         checkedIndex = current,
-    ) { which, _ ->
-        val percent = options.getOrNull(which) ?: return@showSettingsSingleChoiceDialog
-        session = session.copy(subtitleBottomPaddingFraction = (percent / 100f).coerceIn(0f, 0.30f))
-        applySubtitleStyle()
-        (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
+        label = { "${it}%" },
+    ) { percent ->
+        updateSubtitleSettings(
+            transform = { it.copy(subtitleBottomPaddingFraction = (percent / 100f).coerceIn(0f, 0.30f)) },
+            apply = { applySubtitleStyle() },
+        )
     }
 }
 
 internal fun PlayerActivity.showSubtitleBackgroundOpacityDialog() {
-    val options = (20 downTo 0).map { it / 20f }.toMutableList()
-    val defaultOpacity = 34f / 255f
-    if (options.none { abs(it - defaultOpacity) < 0.005f }) options.add(defaultOpacity)
-    val ordered = options.distinct().sortedDescending()
-    val items = ordered.map { String.format(Locale.US, "%.2f", it) }
+    val ordered = PlaybackSettingChoices.subtitleBackgroundOpacities
     val current = ordered.indices.minByOrNull { abs(ordered[it] - session.subtitleBackgroundOpacity) } ?: 0
-    showSettingsSingleChoiceDialog(
+    showSettingsChoiceDialog(
         title = "字幕背景透明度",
-        items = items,
+        options = ordered,
         checkedIndex = current,
-    ) { which, _ ->
-        val v = ordered.getOrNull(which) ?: return@showSettingsSingleChoiceDialog
-        session = session.copy(subtitleBackgroundOpacity = v.coerceIn(0f, 1.0f))
-        applySubtitleStyle()
-        (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
+        label = { String.format(Locale.US, "%.2f", it) },
+    ) { picked ->
+        updateSubtitleSettings(
+            transform = { it.copy(subtitleBackgroundOpacity = picked.coerceIn(0f, 1.0f)) },
+            apply = { applySubtitleStyle() },
+        )
     }
 }
 
@@ -831,82 +830,108 @@ internal fun PlayerActivity.applySubtitleTextSize() {
 }
 
 internal fun PlayerActivity.showDanmakuOpacityDialog() {
-    val options = (20 downTo 1).map { it / 20f }
-    val items = options.map { String.format(Locale.US, "%.2f", it) }
+    val options = PlaybackSettingChoices.danmakuOpacities
     val current = options.indices.minByOrNull { kotlin.math.abs(options[it] - session.danmaku.opacity) } ?: 0
-    showSettingsSingleChoiceDialog(
+    showSettingsChoiceDialog(
         title = "弹幕透明度",
-        items = items,
+        options = options,
         checkedIndex = current,
-    ) { which, _ ->
-        val v = options.getOrNull(which) ?: session.danmaku.opacity
-        session = session.copy(danmaku = session.danmaku.copy(opacity = v))
-        binding.danmakuView.invalidate()
-        refreshSettings(binding.recyclerSettings.adapter as PlayerSettingsAdapter)
+        label = { String.format(Locale.US, "%.2f", it) },
+    ) { picked ->
+        updateDanmakuAppearance { copy(opacity = picked) }
     }
 }
 
 internal fun PlayerActivity.showDanmakuTextSizeDialog() {
-    val options = (10..60 step 2).toList()
-    val items = options.map { it.toString() }.toTypedArray()
+    val options = PlaybackSettingChoices.danmakuTextSizes
     val current =
         options.indices.minByOrNull { kotlin.math.abs(options[it].toFloat() - session.danmaku.textSizeSp) }
             ?: options.indexOf(18).takeIf { it >= 0 }
             ?: 0
-    showSettingsSingleChoiceDialog(
+    showSettingsChoiceDialog(
         title = "弹幕字体大小",
-        items = items.toList(),
+        options = options,
         checkedIndex = current,
-    ) { which, _ ->
-        val v = (options.getOrNull(which) ?: session.danmaku.textSizeSp.toInt()).toFloat()
-        session = session.copy(danmaku = session.danmaku.copy(textSizeSp = v))
-        binding.danmakuView.invalidate()
-        refreshSettings(binding.recyclerSettings.adapter as PlayerSettingsAdapter)
+    ) { picked ->
+        updateDanmakuAppearance { copy(textSizeSp = picked.toFloat()) }
     }
 }
 
 internal fun PlayerActivity.showDanmakuSpeedDialog() {
-    val options = (1..10).toList()
-    val items = options.map { it.toString() }
-    val current = options.indexOf(session.danmaku.speedLevel).let { if (it >= 0) it else 3 }
-    showSettingsSingleChoiceDialog(
+    val options = PlaybackSettingChoices.danmakuSpeeds
+    val current = options.indexOf(session.danmaku.speedLevel).takeIf { it >= 0 } ?: 3
+    showSettingsChoiceDialog(
         title = "弹幕速度(1~10)",
-        items = items,
+        options = options,
         checkedIndex = current,
-    ) { which, _ ->
-        val v = options.getOrNull(which) ?: session.danmaku.speedLevel
-        session = session.copy(danmaku = session.danmaku.copy(speedLevel = v))
-        binding.danmakuView.invalidate()
-        refreshSettings(binding.recyclerSettings.adapter as PlayerSettingsAdapter)
+    ) { picked ->
+        updateDanmakuAppearance { copy(speedLevel = picked) }
     }
 }
 
 internal fun PlayerActivity.showDanmakuAreaDialog() {
-    val options = listOf(
-        (1f / 6f) to "1/6",
-        (1f / 5f) to "1/5",
-        0.25f to "1/4",
-        (1f / 3f) to "1/3",
-        (2f / 5f) to "2/5",
-        0.50f to "1/2",
-        (3f / 5f) to "3/5",
-        (2f / 3f) to "2/3",
-        0.75f to "3/4",
-        (4f / 5f) to "4/5",
-        1.00f to "不限",
-    )
-    val items = options.map { it.second }
+    val options = PlaybackSettingChoices.danmakuAreas
     val current =
         options.indices.minByOrNull { kotlin.math.abs(options[it].first - session.danmaku.area) }
             ?: options.lastIndex
-    showSettingsSingleChoiceDialog(
-        title = "弹幕区域",
-        items = items,
+    showSettingsChoiceDialog(
+        title = "弹幕占屏比",
+        options = options,
         checkedIndex = current,
-    ) { which, _ ->
-        val v = options.getOrNull(which)?.first ?: session.danmaku.area
-        session = session.copy(danmaku = session.danmaku.copy(area = v))
-        binding.danmakuView.invalidate()
-        refreshSettings(binding.recyclerSettings.adapter as PlayerSettingsAdapter)
+        label = { it.second },
+    ) { picked ->
+        updateDanmakuAppearance { copy(area = picked.first) }
+    }
+}
+
+internal fun PlayerActivity.showDanmakuStrokeWidthDialog() {
+    val options = PlaybackSettingChoices.danmakuStrokeWidths
+    val current = options.indexOf(session.danmaku.strokeWidthPx).takeIf { it >= 0 } ?: options.indexOf(4)
+    showSettingsChoiceDialog(
+        title = "弹幕文字描边粗细",
+        options = options,
+        checkedIndex = current.coerceAtLeast(0),
+    ) { picked ->
+        updateDanmakuAppearance { copy(strokeWidthPx = picked) }
+    }
+}
+
+internal fun PlayerActivity.showDanmakuFontWeightDialog() {
+    val options = PlaybackSettingChoices.danmakuFontWeights
+    val current = options.indexOf(session.danmaku.fontWeight).takeIf { it >= 0 } ?: 1
+    showSettingsChoiceDialog(
+        title = "字体粗细",
+        options = options,
+        checkedIndex = current,
+        label = ::danmakuFontWeightText,
+    ) { picked ->
+        updateDanmakuAppearance { copy(fontWeight = picked) }
+    }
+}
+
+internal fun PlayerActivity.showDanmakuLaneDensityDialog() {
+    val options = PlaybackSettingChoices.danmakuLaneDensities
+    val current = options.indexOf(session.danmaku.laneDensity).takeIf { it >= 0 } ?: 1
+    showSettingsChoiceDialog(
+        title = "轨道密度",
+        options = options,
+        checkedIndex = current,
+        label = ::danmakuLaneDensityText,
+    ) { picked ->
+        updateDanmakuAppearance { copy(laneDensity = picked) }
+    }
+}
+
+internal fun PlayerActivity.showDanmakuAiShieldLevelDialog() {
+    val options = PlaybackSettingChoices.aiShieldLevels
+    val current = options.indexOf(session.danmaku.aiShieldLevel.coerceIn(1, 10)).takeIf { it >= 0 } ?: 2
+    showSettingsChoiceDialog(
+        title = "智能云屏蔽等级",
+        options = options,
+        checkedIndex = current,
+    ) { picked ->
+        updateDanmakuSettings(reloadDanmaku = true) {
+            it.copy(aiShieldLevel = picked.coerceIn(1, 10))
+        }
     }
 }

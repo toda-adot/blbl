@@ -43,6 +43,7 @@ import blbl.cat3399.core.ui.popup.PopupActionRole
 import blbl.cat3399.core.update.ApkUpdater
 import blbl.cat3399.feature.player.engine.IjkPlayerPluginUi
 import blbl.cat3399.feature.player.AudioBalanceLevel
+import blbl.cat3399.feature.player.PlaybackSettingChoices
 import blbl.cat3399.feature.player.PlayerCustomShortcutCatalog
 import blbl.cat3399.feature.risk.GaiaVgateActivity
 import blbl.cat3399.ui.MainActivity
@@ -924,7 +925,7 @@ class SettingsInteractionHandler(
             }
 
             SettingId.SubtitleTextSizeSp -> {
-                val options = (10..60 step 2).toList()
+                val options = PlaybackSettingChoices.subtitleTextSizes
                 showChoiceDialog(
                     title = "字幕字体大小(sp)",
                     items = options.map { it.toString() },
@@ -936,7 +937,7 @@ class SettingsInteractionHandler(
             }
 
             SettingId.SubtitleBottomPaddingFraction -> {
-                val options = (0..30 step 2).toList()
+                val options = PlaybackSettingChoices.subtitleBottomPaddingPercents
                 val items = options.map { "${it}%" }
                 val checked =
                     options.indices.minByOrNull { kotlin.math.abs(options[it] / 100f - prefs.subtitleBottomPaddingFraction) }
@@ -953,10 +954,7 @@ class SettingsInteractionHandler(
             }
 
             SettingId.SubtitleBackgroundOpacity -> {
-                val options = (20 downTo 0).map { it / 20f }.toMutableList()
-                val defaultOpacity = 34f / 255f
-                if (options.none { kotlin.math.abs(it - defaultOpacity) < 0.005f }) options.add(defaultOpacity)
-                val ordered = options.distinct().sortedDescending()
+                val ordered = PlaybackSettingChoices.subtitleBackgroundOpacities
                 val items = ordered.map { String.format(Locale.US, "%.2f", it) }
                 val checked = ordered.indices.minByOrNull { kotlin.math.abs(ordered[it] - prefs.subtitleBackgroundOpacity) } ?: 0
                 showChoiceDialog(
@@ -971,7 +969,7 @@ class SettingsInteractionHandler(
             }
 
             SettingId.DanmakuOpacity -> {
-                val options = (20 downTo 1).map { it / 20f }
+                val options = PlaybackSettingChoices.danmakuOpacities
                 showChoiceDialog(
                     title = "弹幕透明度",
                     items = options.map { String.format(Locale.US, "%.2f", it) },
@@ -983,7 +981,7 @@ class SettingsInteractionHandler(
             }
 
             SettingId.DanmakuTextSizeSp -> {
-                val options = (10..60 step 2).toList()
+                val options = PlaybackSettingChoices.danmakuTextSizes
                 showChoiceDialog(
                     title = "弹幕字体大小(sp)",
                     items = options.map { it.toString() },
@@ -995,24 +993,24 @@ class SettingsInteractionHandler(
             }
 
             SettingId.DanmakuFontWeight -> {
-                val options =
-                    listOf(
-                        AppPrefs.DANMAKU_FONT_WEIGHT_NORMAL to "常规",
-                        AppPrefs.DANMAKU_FONT_WEIGHT_BOLD to "加粗",
-                    )
+                val options = PlaybackSettingChoices.danmakuFontWeights
                 showChoiceDialog(
                     title = "字体粗细",
-                    items = options.map { it.second },
+                    items = options.map { SettingsText.danmakuFontWeightText(it.prefValue) },
                     current = SettingsText.danmakuFontWeightText(prefs.danmakuFontWeight),
                 ) { selected ->
-                    val value = options.firstOrNull { it.second == selected }?.first ?: AppPrefs.DANMAKU_FONT_WEIGHT_BOLD
+                    val value =
+                        options
+                            .firstOrNull { SettingsText.danmakuFontWeightText(it.prefValue) == selected }
+                            ?.prefValue
+                            ?: AppPrefs.DANMAKU_FONT_WEIGHT_BOLD
                     prefs.danmakuFontWeight = value
                     renderer.refreshSection(entry.id)
                 }
             }
 
             SettingId.DanmakuStrokeWidthPx -> {
-                val options = listOf(0, 2, 4, 6)
+                val options = PlaybackSettingChoices.danmakuStrokeWidths
                 showChoiceDialog(
                     title = "弹幕文字描边粗细",
                     items = options.map { it.toString() },
@@ -1024,20 +1022,7 @@ class SettingsInteractionHandler(
             }
 
             SettingId.DanmakuArea -> {
-                val options =
-                    listOf(
-                        (1f / 6f) to "1/6",
-                        (1f / 5f) to "1/5",
-                        0.25f to "1/4",
-                        (1f / 3f) to "1/3",
-                        (2f / 5f) to "2/5",
-                        0.50f to "1/2",
-                        (3f / 5f) to "3/5",
-                        (2f / 3f) to "2/3",
-                        0.75f to "3/4",
-                        (4f / 5f) to "4/5",
-                        1.00f to "不限",
-                    )
+                val options = PlaybackSettingChoices.danmakuAreas
                 showChoiceDialog(
                     title = "弹幕占屏比",
                     items = options.map { it.second },
@@ -1050,25 +1035,24 @@ class SettingsInteractionHandler(
             }
 
             SettingId.DanmakuLaneDensity -> {
-                val options =
-                    listOf(
-                        AppPrefs.DANMAKU_LANE_DENSITY_SPARSE to "稀疏",
-                        AppPrefs.DANMAKU_LANE_DENSITY_STANDARD to "标准",
-                        AppPrefs.DANMAKU_LANE_DENSITY_DENSE to "密集",
-                    )
+                val options = PlaybackSettingChoices.danmakuLaneDensities
                 showChoiceDialog(
                     title = "轨道密度",
-                    items = options.map { it.second },
+                    items = options.map { SettingsText.danmakuLaneDensityText(it.prefValue) },
                     current = SettingsText.danmakuLaneDensityText(prefs.danmakuLaneDensity),
                 ) { selected ->
-                    val value = options.firstOrNull { it.second == selected }?.first ?: AppPrefs.DANMAKU_LANE_DENSITY_STANDARD
+                    val value =
+                        options
+                            .firstOrNull { SettingsText.danmakuLaneDensityText(it.prefValue) == selected }
+                            ?.prefValue
+                            ?: AppPrefs.DANMAKU_LANE_DENSITY_STANDARD
                     prefs.danmakuLaneDensity = value
                     renderer.refreshSection(entry.id)
                 }
             }
 
             SettingId.DanmakuSpeed -> {
-                val options = (1..10).map { it.toString() }
+                val options = PlaybackSettingChoices.danmakuSpeeds.map(Int::toString)
                 showChoiceDialog(
                     title = "弹幕速度(1~10)",
                     items = options,
@@ -1090,7 +1074,7 @@ class SettingsInteractionHandler(
             }
 
             SettingId.DanmakuAiShieldLevel -> {
-                val options = (1..10).map { it.toString() }
+                val options = PlaybackSettingChoices.aiShieldLevels.map(Int::toString)
                 showChoiceDialog(
                     title = "智能云屏蔽等级",
                     items = options,
@@ -1128,7 +1112,7 @@ class SettingsInteractionHandler(
 
             SettingId.PlayerPreferredQn -> {
                 val options =
-                    listOf(16, 32, 64, 74, 80, 100, 112, 116, 120, 125, 126, 127, 129).map { it to SettingsText.qnText(it) }
+                    PlaybackSettingChoices.resolutionQns.map { it to SettingsText.qnText(it) }
                 showChoiceDialog(
                     title = "默认画质",
                     items = options.map { it.second },
@@ -1142,7 +1126,7 @@ class SettingsInteractionHandler(
 
             SettingId.PlayerPreferredQnPortrait -> {
                 val options =
-                    listOf(16, 32, 64, 74, 80, 100, 112, 116, 120, 125, 126, 127, 129).map { it to SettingsText.qnText(it) }
+                    PlaybackSettingChoices.resolutionQns.map { it to SettingsText.qnText(it) }
                 showChoiceDialog(
                     title = "默认画质（竖屏）",
                     items = options.map { it.second },
@@ -1155,7 +1139,7 @@ class SettingsInteractionHandler(
             }
 
             SettingId.PlayerPreferredAudioId -> {
-                val options = listOf(30251, 30250, 30280, 30232, 30216)
+                val options = PlaybackSettingChoices.audioTrackIds
                 val optionLabels = options.map { SettingsText.audioText(it) }
                 showChoiceDialog(
                     title = "默认音轨",
@@ -1188,7 +1172,7 @@ class SettingsInteractionHandler(
             }
 
             SettingId.PlayerSpeed -> {
-                val options = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
+                val options = PlaybackSettingChoices.playbackSpeeds
                 showChoiceDialog(
                     title = "默认播放速度",
                     items = options.map { String.format(Locale.US, "%.2fx", it) },

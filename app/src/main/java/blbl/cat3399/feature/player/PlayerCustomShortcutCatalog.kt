@@ -146,7 +146,7 @@ internal object PlayerCustomShortcutCatalog {
             }
 
             PlayerCustomShortcutAction.TYPE_SET_PLAYBACK_SPEED -> {
-                val options = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f, 3.0f, 4.0f)
+                val options = PlaybackSettingChoices.extendedPlaybackSpeeds
                 val current = (currentAction as? PlayerCustomShortcutAction.SetPlaybackSpeed)?.speed
                 val checked = options.indices.minByOrNull { idx -> abs(options[idx] - (current ?: 1.0f)) } ?: 2
                 PlayerCustomShortcutValuePickerConfig(
@@ -156,7 +156,7 @@ internal object PlayerCustomShortcutCatalog {
             }
 
             PlayerCustomShortcutAction.TYPE_SET_RESOLUTION_QN -> {
-                val options = listOf(16, 32, 64, 74, 80, 100, 112, 116, 120, 125, 126, 127, 129)
+                val options = PlaybackSettingChoices.resolutionQns
                 val current = (currentAction as? PlayerCustomShortcutAction.SetResolutionQn)?.qn
                 val checked = options.indexOf(current).takeIf { it >= 0 } ?: 0
                 PlayerCustomShortcutValuePickerConfig(
@@ -166,7 +166,7 @@ internal object PlayerCustomShortcutCatalog {
             }
 
             PlayerCustomShortcutAction.TYPE_SET_AUDIO_ID -> {
-                val options = listOf(30251, 30250, 30280, 30232, 30216)
+                val options = PlaybackSettingChoices.audioTrackIds
                 val current = (currentAction as? PlayerCustomShortcutAction.SetAudioId)?.audioId
                 val checked = options.indexOf(current).takeIf { it >= 0 } ?: 0
                 PlayerCustomShortcutValuePickerConfig(

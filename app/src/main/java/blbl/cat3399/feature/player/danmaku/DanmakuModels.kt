@@ -59,6 +59,14 @@ data class DanmakuSessionSettings(
     val speedLevel: Int,
     val area: Float,
     val laneDensity: DanmakuLaneDensity,
+    val followBiliShield: Boolean = true,
+    val aiShieldEnabled: Boolean = false,
+    val aiShieldLevel: Int = 3,
+    val allowScroll: Boolean = true,
+    val allowTop: Boolean = true,
+    val allowBottom: Boolean = true,
+    val allowColor: Boolean = true,
+    val allowSpecial: Boolean = true,
 ) {
     fun toConfig(): DanmakuConfig =
         DanmakuConfig(

@@ -142,9 +142,7 @@ private fun PlayerActivity.applyPlayerCustomShortcut(keyCode: Int, action: Playe
         }
 
         PlayerCustomShortcutAction.ToggleDanmaku -> {
-            session = session.copy(danmaku = session.danmaku.copy(enabled = !session.danmaku.enabled))
-            binding.danmakuView.invalidate()
-            updateDanmakuButton()
+            setDanmakuEnabled(!session.danmaku.enabled)
             (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
             val state = if (session.danmaku.enabled) "开" else "关"
             showSeekHint("弹幕：$state", hold = false)
