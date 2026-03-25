@@ -12,6 +12,7 @@ import android.widget.TextView
 import androidx.lifecycle.lifecycleScope
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
+import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.BaseActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -31,6 +32,28 @@ class GaiaVgateActivity : BaseActivity() {
             finish()
             return
         }
+        val registerContext =
+            buildString {
+                append("vVoucherLen=").append(vVoucher.length)
+                append(" vVoucherPrefix=").append(vVoucher.take(8))
+                append(" hasSess=").append(if (BiliClient.cookies.hasSessData()) 1 else 0)
+                append(" hasCsrf=").append(
+                    if (BiliClient.cookies.getCookieValue("bili_jct").orEmpty().trim().isNotBlank()) 1 else 0,
+                )
+                append(" hasGaiaVtoken=").append(
+                    if (
+                        BiliClient.cookies
+                            .getCookieValue("x-bili-gaia-vtoken")
+                            .orEmpty()
+                            .trim()
+                            .isNotBlank()
+                    ) {
+                        1
+                    } else {
+                        0
+                    },
+                )
+            }
 
         status = TextView(this).apply { text = "正在申请风控验证…" }
         webView =
@@ -52,10 +75,15 @@ class GaiaVgateActivity : BaseActivity() {
 
         lifecycleScope.launch {
             try {
+                AppLog.i("GaiaVgate", "register start $registerContext")
                 val reg =
                     withContext(Dispatchers.IO) {
                         BiliApi.gaiaVgateRegister(vVoucher)
                     }
+                AppLog.i(
+                    "GaiaVgate",
+                    "register ok $registerContext token=${reg.token.take(8)} gt=${reg.gt.take(6)} challenge=${reg.challenge.take(6)}",
+                )
                 status.text = "请完成验证…"
                 val bridge = Bridge(token = reg.token)
                 webView.addJavascriptInterface(bridge, "Android")
@@ -67,7 +95,7 @@ class GaiaVgateActivity : BaseActivity() {
                     null,
                 )
             } catch (t: Throwable) {
-                AppLog.w("GaiaVgate", "register failed", t)
+                AppLog.e("GaiaVgate", "register failed $registerContext", t)
                 status.text = "申请失败：${t.message}"
             }
         }
@@ -107,7 +135,7 @@ class GaiaVgateActivity : BaseActivity() {
                     setResult(RESULT_OK, out)
                     finish()
                 } catch (t: Throwable) {
-                    AppLog.w("GaiaVgate", "validate failed", t)
+                    AppLog.e("GaiaVgate", "validate failed token=${token.take(8)}", t)
                     status.text = "提交失败：${t.message}"
                 }
             }

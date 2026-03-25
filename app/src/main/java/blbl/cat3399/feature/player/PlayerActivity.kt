@@ -197,7 +197,6 @@ class PlayerActivity : BaseActivity() {
     internal var keySeekHoldDetectJob: kotlinx.coroutines.Job? = null
     internal var keySeekPendingKeyCode: Int = 0
     internal var keySeekPendingDirection: Int = 0
-    internal var riskControlBypassHintShown: Boolean = false
     internal var seekOsdToken: Long = 0L
     internal var transientSeekOsdVisible: Boolean = false
     internal var bottomBarFullConstraints: ConstraintSet? = null
@@ -1186,6 +1185,119 @@ class PlayerActivity : BaseActivity() {
         return !hasAnyPlayableUrl(playJson)
     }
 
+    private fun buildPlayUrlRiskContext(
+        bvid: String,
+        aid: Long?,
+        cid: Long,
+        epId: Long?,
+        qn: Int,
+        fnval: Int,
+    ): String =
+        buildString {
+            append("bvid=").append(bvid.trim().ifBlank { "-" })
+            append(" aid=").append(aid ?: -1L)
+            append(" cid=").append(cid)
+            append(" epId=").append(epId ?: -1L)
+            append(" qn=").append(qn)
+            append(" fnval=").append(fnval)
+            append(" hasSess=").append(if (BiliClient.cookies.hasSessData()) 1 else 0)
+            append(" hasGaiaVtoken=").append(
+                if (
+                    BiliClient.cookies
+                        .getCookieValue("x-bili-gaia-vtoken")
+                        .orEmpty()
+                        .trim()
+                        .isNotBlank()
+                ) {
+                    1
+                } else {
+                    0
+                },
+            )
+            append(" savedVVoucher=").append(if (BiliClient.prefs.gaiaVgateVVoucher.isNullOrBlank()) 0 else 1)
+        }
+
+    private fun jsonKeysForRiskLog(obj: JSONObject?, maxKeys: Int = 64): String {
+        if (obj == null) return "[]"
+        val keys = ArrayList<String>()
+        val iterator = obj.keys()
+        while (iterator.hasNext()) {
+            keys += iterator.next()
+        }
+        if (keys.isEmpty()) return "[]"
+        keys.sort()
+        val shown = keys.take(maxKeys)
+        return buildString {
+            append('[')
+            append(shown.joinToString(","))
+            if (keys.size > maxKeys) {
+                append(",...+").append(keys.size - maxKeys)
+            }
+            append(']')
+        }
+    }
+
+    private fun buildPlayUrlRiskPayload(json: JSONObject): String {
+        val data = json.optJSONObject("data") ?: json.optJSONObject("result")
+        val dash = data?.optJSONObject("dash")
+        val durl = data?.optJSONArray("durl")
+        val rendered = runCatching { json.toString() }.getOrNull()
+        val summary =
+            buildString {
+                append("code=").append(json.optInt("code", 0))
+                append(" message=").append(
+                    json.optString("message", json.optString("msg", ""))
+                        .trim()
+                        .ifBlank { "-" },
+                )
+                append(" hasPlayableUrl=").append(if (hasAnyPlayableUrl(json)) 1 else 0)
+                append(" hasDash=").append(if (dash != null) 1 else 0)
+                append(" dashVideo=").append(dash?.optJSONArray("video")?.length() ?: 0)
+                append(" dashAudio=").append(dash?.optJSONArray("audio")?.length() ?: 0)
+                append(" durl=").append(durl?.length() ?: 0)
+                append(" hasVVoucher=").append(if (extractVVoucher(json) != null) 1 else 0)
+                append(" topKeys=").append(jsonKeysForRiskLog(json))
+                append(" dataKeys=").append(jsonKeysForRiskLog(data))
+            }
+        if (rendered != null && rendered.length <= PLAYURL_RISK_LOG_FULL_JSON_MAX_CHARS) {
+            return "$summary\njson=$rendered"
+        }
+        return buildString {
+            append(summary)
+            append("\njson_keys_only size=").append(rendered?.length ?: -1)
+            append(" topKeys=").append(jsonKeysForRiskLog(json))
+            append(" dataKeys=").append(jsonKeysForRiskLog(data))
+        }
+    }
+
+    private fun logPlayUrlRiskResponse(
+        stage: String,
+        reason: String,
+        context: String,
+        json: JSONObject,
+    ) {
+        AppLog.w(
+            "Player",
+            buildString {
+                append("risk-control ").append(stage).append(" reason=").append(reason).append('\n')
+                append("context: ").append(context).append('\n')
+                append(buildPlayUrlRiskPayload(json))
+            },
+        )
+    }
+
+    private fun logPlayUrlRiskException(
+        stage: String,
+        reason: String,
+        context: String,
+        error: BiliApiException,
+    ) {
+        AppLog.w(
+            "Player",
+            "risk-control $stage reason=$reason context: $context apiCode=${error.apiCode} apiMessage=${error.apiMessage}",
+        )
+    }
+
     internal suspend fun loadPlayableWithTryLookFallback(
         bvid: String,
         aid: Long?,
@@ -1195,6 +1307,59 @@ class PlayerActivity : BaseActivity() {
         fnval: Int,
         constraints: PlaybackConstraints,
     ): PlayFetchResult {
+        val riskContext =
+            buildPlayUrlRiskContext(
+                bvid = bvid,
+                aid = aid,
+                cid = cid,
+                epId = epId,
+                qn = qn,
+                fnval = fnval,
+            )
+
+        suspend fun requestTryLook(reason: String): JSONObject {
+            AppLog.w("Player", "risk-control try_look request reason=$reason context: $riskContext")
+            return try {
+                requestPlayJson(
+                    bvid = bvid,
+                    aid = aid,
+                    cid = cid,
+                    epId = epId,
+                    qn = qn,
+                    fnval = fnval,
+                    tryLook = true,
+                )
+            } catch (t: Throwable) {
+                AppLog.e("Player", "risk-control try_look request failed reason=$reason context: $riskContext", t)
+                throw t
+            }
+        }
+
+        suspend fun buildTryLookResult(
+            fallbackJson: JSONObject,
+            riskCode: Int,
+            riskMessage: String,
+            failureMessage: String,
+            reason: String,
+        ): PlayFetchResult {
+            logPlayUrlRiskResponse(
+                stage = "try_look_response",
+                reason = reason,
+                context = riskContext,
+                json = fallbackJson,
+            )
+            fallbackJson.put("__blbl_risk_control_bypassed", true)
+            fallbackJson.put("__blbl_risk_control_code", riskCode)
+            fallbackJson.put("__blbl_risk_control_message", riskMessage)
+            return try {
+                val playable = pickPlayable(fallbackJson, constraints)
+                PlayFetchResult(json = fallbackJson, playable = playable)
+            } catch (t: Throwable) {
+                AppLog.e("Player", "risk-control try_look fallback failed reason=$reason context: $riskContext", t)
+                throw BiliApiException(apiCode = -352, apiMessage = failureMessage)
+            }
+        }
+
         val primaryJson =
             try {
                 requestPlayJson(
@@ -1209,55 +1374,60 @@ class PlayerActivity : BaseActivity() {
             } catch (t: Throwable) {
                 val e = t as? BiliApiException
                 if (e != null && isRiskControl(e)) {
+                    logPlayUrlRiskException(
+                        stage = "primary_playurl_exception",
+                        reason = "risk_api_error",
+                        context = riskContext,
+                        error = e,
+                    )
                     val fallbackJson =
-                        requestPlayJson(
-                            bvid = bvid,
-                            aid = aid,
-                            cid = cid,
-                            epId = epId,
-                            qn = qn,
-                            fnval = fnval,
-                            tryLook = true,
-                        )
-                    fallbackJson.put("__blbl_risk_control_bypassed", true)
-                    fallbackJson.put("__blbl_risk_control_code", e.apiCode)
-                    fallbackJson.put("__blbl_risk_control_message", e.apiMessage)
-                    val playable = pickPlayable(fallbackJson, constraints)
-                    return PlayFetchResult(json = fallbackJson, playable = playable)
+                        try {
+                            requestTryLook(reason = "risk_api_error")
+                        } catch (_: Throwable) {
+                            throw BiliApiException(
+                                apiCode = -352,
+                                apiMessage = "风控拦截：主请求被限制，且 try_look 请求失败",
+                            )
+                        }
+                    return buildTryLookResult(
+                        fallbackJson = fallbackJson,
+                        riskCode = e.apiCode,
+                        riskMessage = e.apiMessage,
+                        failureMessage = "风控拦截：主请求被限制，且 try_look 兜底失败",
+                        reason = "risk_api_error",
+                    )
                 }
                 throw t
             }
 
-        return try {
-            val playable = pickPlayable(primaryJson, constraints)
-            PlayFetchResult(json = primaryJson, playable = playable)
-        } catch (t: Throwable) {
-            if (!shouldAttemptTryLookFallback(primaryJson)) throw t
-
+        if (shouldAttemptTryLookFallback(primaryJson)) {
             extractVVoucher(primaryJson)?.let { recordVVoucher(it) }
-
+            logPlayUrlRiskResponse(
+                stage = "primary_playurl_response",
+                reason = "no_playable_url",
+                context = riskContext,
+                json = primaryJson,
+            )
             val fallbackJson =
-                requestPlayJson(
-                    bvid = bvid,
-                    aid = aid,
-                    cid = cid,
-                    epId = epId,
-                    qn = qn,
-                    fnval = fnval,
-                    tryLook = true,
-                )
-            fallbackJson.put("__blbl_risk_control_bypassed", true)
-            fallbackJson.put("__blbl_risk_control_code", -352)
-            fallbackJson.put("__blbl_risk_control_message", "fallback try_look after no playable stream")
-
-            return try {
-                val playable = pickPlayable(fallbackJson, constraints)
-                PlayFetchResult(json = fallbackJson, playable = playable)
-            } catch (t2: Throwable) {
-                AppLog.w("Player", "try_look fallback failed", t2)
-                throw BiliApiException(apiCode = -352, apiMessage = "风控拦截：未返回可播放地址（已尝试 try_look 兜底失败）")
-            }
+                try {
+                    requestTryLook(reason = "no_playable_url")
+                } catch (_: Throwable) {
+                    throw BiliApiException(
+                        apiCode = -352,
+                        apiMessage = "风控拦截：主返回未提供可播放地址，且 try_look 请求失败",
+                    )
+                }
+            return buildTryLookResult(
+                fallbackJson = fallbackJson,
+                riskCode = -352,
+                riskMessage = "fallback try_look after no playable stream",
+                failureMessage = "风控拦截：主返回未提供可播放地址，且 try_look 兜底失败",
+                reason = "no_playable_url",
+            )
         }
+
+        val playable = pickPlayable(primaryJson, constraints)
+        return PlayFetchResult(json = primaryJson, playable = playable)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -3319,6 +3489,7 @@ class PlayerActivity : BaseActivity() {
         private const val DANMAKU_PREFETCH_SEGMENTS = 2
         private const val DANMAKU_PREFETCH_INTERVAL_MS = 1_000L
         private const val DANMAKU_CACHE_SEGMENTS = 20
+        private const val PLAYURL_RISK_LOG_FULL_JSON_MAX_CHARS = 8_192
         private const val PLAYURL_AUTO_REFRESH_LEAD_MS = 3 * 60_000L
         private const val PLAYURL_AUTO_REFRESH_FALLBACK_DELAY_MS = 55 * 60_000L
         private const val PLAYURL_AUTO_REFRESH_FALLBACK_MIN_DURATION_MS = 60 * 60_000L
