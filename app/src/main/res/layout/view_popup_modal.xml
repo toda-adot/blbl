@@ -14,10 +14,9 @@
         android:layout_gravity="center"
         android:layout_margin="20dp"
         app:cardBackgroundColor="?attr/colorSurface"
-        app:cardCornerRadius="16dp"
-        app:cardUseCompatPadding="true">
+        app:cardCornerRadius="16dp">
 
-        <LinearLayout
+        <blbl.cat3399.core.ui.popup.PopupModalLayout
             android:id="@+id/container"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -48,6 +47,6 @@
                 android:layout_marginTop="16dp"
                 android:gravity="end"
                 android:orientation="horizontal" />
-        </LinearLayout>
+        </blbl.cat3399.core.ui.popup.PopupModalLayout>
     </com.google.android.material.card.MaterialCardView>
 </FrameLayout>

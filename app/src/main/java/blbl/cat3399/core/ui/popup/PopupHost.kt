@@ -416,12 +416,14 @@ internal class PopupHost private constructor(
         val dm = dialogContext.resources.displayMetrics
         val maxWidthPx = dp(dialogContext, 600f)
         val targetWidthPx = (dm.widthPixels * 0.90f).toInt().coerceAtMost(maxWidthPx).coerceAtLeast(1)
+        val targetHeightPx = (dm.heightPixels * 0.90f).toInt().coerceAtLeast(1)
         (card.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
             if (lp.width != targetWidthPx) {
                 lp.width = targetWidthPx
                 card.layoutParams = lp
             }
         }
+        (card.findViewById<View>(R.id.container) as? PopupModalLayout)?.maxHeightPx = targetHeightPx
     }
 
     private fun dp(context: android.content.Context, value: Float): Int =

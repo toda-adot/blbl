@@ -3,28 +3,24 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/btn"
     android:layout_width="wrap_content"
-    android:layout_height="wrap_content"
+    android:layout_height="56dp"
     android:clickable="true"
     android:focusable="true"
-    android:includeFontPadding="false"
     android:stateListAnimator="@animator/blbl_focus_scale"
     app:cardBackgroundColor="?attr/colorSurface"
     app:cardCornerRadius="12dp"
-    app:cardUseCompatPadding="true"
     app:strokeColor="?attr/blblFocusStrokeColor"
     app:strokeWidth="2dp">
 
     <TextView
         android:id="@+id/tv_text"
         android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
+        android:layout_height="match_parent"
         android:ellipsize="end"
         android:gravity="center"
         android:maxLines="1"
         android:minWidth="88dp"
         android:paddingHorizontal="16dp"
-        android:paddingVertical="10dp"
         android:textColor="?attr/colorOnSurface"
         android:textSize="16sp" />
 </com.google.android.material.card.MaterialCardView>
-

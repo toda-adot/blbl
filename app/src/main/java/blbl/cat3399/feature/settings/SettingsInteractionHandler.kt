@@ -1637,6 +1637,15 @@ class SettingsInteractionHandler(
             fun showManager(focusKeyCode: Int? = null) {
                 var replacing = false
                 val items = loadShortcuts()
+                var recyclerForLayout: RecyclerView? = null
+                val focusIndex =
+                    if (items.isNotEmpty()) {
+                        focusKeyCode?.let { key ->
+                            items.indexOfFirst { it.keyCode == key }.takeIf { it >= 0 }
+                        } ?: 0
+                    } else {
+                        0
+                    }
 
                 AppPopup.custom(
                     context = activity,
@@ -1683,6 +1692,16 @@ class SettingsInteractionHandler(
                         ),
                     preferredActionRole = PopupActionRole.POSITIVE,
                     autoFocus = true,
+                    onModalAttached = { modalRoot ->
+                        recyclerForLayout?.let { recycler ->
+                            AppPopup.applyManagedListLayout(
+                                modalRoot = modalRoot,
+                                recycler = recycler,
+                                itemCount = items.size,
+                                focusIndex = focusIndex,
+                            )
+                        }
+                    },
                     onDismiss = {
                         if (!replacing) renderer.showSection(sectionIndex, focusId = focusId)
                     },
@@ -1692,6 +1711,7 @@ class SettingsInteractionHandler(
                             layoutManager = LinearLayoutManager(dialogContext)
                             itemAnimator = null
                         }
+                    recyclerForLayout = recycler
 
                     recycler.adapter =
                         ShortcutListAdapter(items) { picked ->
@@ -1700,10 +1720,6 @@ class SettingsInteractionHandler(
                         }
 
                     if (items.isNotEmpty()) {
-                        val focusIndex =
-                            focusKeyCode?.let { key ->
-                                items.indexOfFirst { it.keyCode == key }.takeIf { it >= 0 }
-                            } ?: 0
                         recycler.scrollToPosition(focusIndex)
                         recycler.post {
                             val holder = recycler.findViewHolderForAdapterPosition(focusIndex)
@@ -1954,6 +1970,15 @@ class SettingsInteractionHandler(
                 var replacing = false
                 val config = loadConfig()
                 val tabs = config.tabs
+                var recyclerForLayout: RecyclerView? = null
+                val focusIndex =
+                    if (tabs.isNotEmpty()) {
+                        focusStableKey?.let { key ->
+                            tabs.indexOfFirst { it.stableKey() == key }.takeIf { it >= 0 }
+                        } ?: 0
+                    } else {
+                        0
+                    }
 
                 AppPopup.custom(
                     context = activity,
@@ -1985,6 +2010,16 @@ class SettingsInteractionHandler(
                         ),
                     preferredActionRole = PopupActionRole.POSITIVE,
                     autoFocus = true,
+                    onModalAttached = { modalRoot ->
+                        recyclerForLayout?.let { recycler ->
+                            AppPopup.applyManagedListLayout(
+                                modalRoot = modalRoot,
+                                recycler = recycler,
+                                itemCount = tabs.size,
+                                focusIndex = focusIndex,
+                            )
+                        }
+                    },
                     onDismiss = {
                         if (!replacing) renderer.showSection(sectionIndex, focusId = focusId)
                     },
@@ -2001,16 +2036,13 @@ class SettingsInteractionHandler(
                             layoutManager = LinearLayoutManager(dialogContext)
                             itemAnimator = null
                         }
+                    recyclerForLayout = recycler
                     recycler.adapter =
                         TabListAdapter(tabs) { picked ->
                             replacing = true
                             showItemActions(picked.stableKey())
                         }
 
-                    val focusIndex =
-                        focusStableKey?.let { key ->
-                            tabs.indexOfFirst { it.stableKey() == key }.takeIf { it >= 0 }
-                        } ?: 0
                     recycler.scrollToPosition(focusIndex)
                     recycler.post {
                         val holder = recycler.findViewHolderForAdapterPosition(focusIndex)

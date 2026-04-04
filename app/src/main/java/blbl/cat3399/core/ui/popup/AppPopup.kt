@@ -218,10 +218,8 @@ object AppPopup {
                     preferredActionRole = null,
                     autoFocus = false,
                     onModalAttached = { modalRoot ->
-                        val card = modalRoot.findViewById<View>(R.id.card) ?: modalRoot
-                        applyChoiceDialogPreDraw(
-                            context = dialogContext,
-                            card = card,
+                        applyManagedListLayout(
+                            modalRoot = modalRoot,
                             recycler = recycler,
                             itemCount = items.size,
                             focusIndex = safeChecked,
@@ -297,10 +295,8 @@ object AppPopup {
                 preferredActionRole = null,
                 autoFocus = false,
                 onModalAttached = { modalRoot ->
-                    val card = modalRoot.findViewById<View>(R.id.card) ?: modalRoot
-                    applyChoiceDialogPreDraw(
-                        context = dialogContext,
-                        card = card,
+                    applyManagedListLayout(
+                        modalRoot = modalRoot,
                         recycler = recycler,
                         itemCount = items.size,
                         focusIndex = focusIndex,
@@ -414,6 +410,22 @@ object AppPopup {
                 onDismiss = onDismiss,
             )
         }
+    }
+
+    fun applyManagedListLayout(
+        modalRoot: View,
+        recycler: RecyclerView,
+        itemCount: Int,
+        focusIndex: Int = 0,
+    ) {
+        val card = modalRoot.findViewById<View>(R.id.card) ?: modalRoot
+        applyChoiceDialogPreDraw(
+            context = modalRoot.context,
+            card = card,
+            recycler = recycler,
+            itemCount = itemCount,
+            focusIndex = focusIndex,
+        )
     }
 
     private fun applyChoiceDialogPreDraw(
