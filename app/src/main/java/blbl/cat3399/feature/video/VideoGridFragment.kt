@@ -327,12 +327,14 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
                             clearPendingFocusFlags()
                             val recycler = b.recycler
                             val isUiAlive = { _binding === b && isResumed }
+                            lastFocusedAdapterPosition = adapter.itemCount.takeIf { it > 0 }?.let { 0 }
                             recycler.requestFocusFirstItemOrSelfAfterRefresh(
                                 itemCount = adapter.itemCount,
                                 smoothScroll = false,
                                 isAlive = isUiAlive,
                                 onDone = { focusedFirstItem ->
                                     if (focusedFirstItem) lastFocusedAdapterPosition = 0
+                                    dpadGridController?.unparkFocusAfterDataSetReset()
                                 },
                             )
                             return@postIfAlive

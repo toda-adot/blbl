@@ -249,6 +249,7 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
                             clearPendingFocusFlags()
                             pendingRestorePosition = null
                             pendingRestoreAttemptsLeft = 0
+                            lastFocusedAdapterPosition = adapter.itemCount.takeIf { it > 0 }?.let { 0 }
 
                             val recycler = b.recycler
                             val isUiAlive = { _binding === b && isResumed }
