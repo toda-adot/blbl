@@ -647,6 +647,7 @@ class SettingsInteractionHandler(
                     .put("down_key_osd_focus_target", prefs.playerDownKeyOsdFocusTarget)
                     .put("toggle_play_state_show_osd", prefs.playerTogglePlayStateShowOsd)
                     .put("persistent_bottom_progress_enabled", prefs.playerPersistentBottomProgressEnabled)
+                    .put("persistent_clock_enabled", prefs.playerPersistentClockEnabled)
                     .put("touch_gestures_enabled", prefs.playerTouchGesturesEnabled)
                     .put("playback_mode", prefs.playerPlaybackMode)
                     .put("osd_buttons", osdButtons),
@@ -1466,6 +1467,11 @@ class SettingsInteractionHandler(
 
             SettingId.PlayerPersistentBottomProgressEnabled -> {
                 prefs.playerPersistentBottomProgressEnabled = !prefs.playerPersistentBottomProgressEnabled
+                renderer.refreshSection(entry.id)
+            }
+
+            SettingId.PlayerPersistentClockEnabled -> {
+                prefs.playerPersistentClockEnabled = !prefs.playerPersistentClockEnabled
                 renderer.refreshSection(entry.id)
             }
 

@@ -117,7 +117,7 @@ internal fun PlayerActivity.onUpQuickFollowClicked() {
 
 internal fun PlayerActivity.updateUpQuickCardUi() {
     val hasUp = currentUpMid > 0L
-    val showCard = hasUp && binding.topBar.visibility == View.VISIBLE
+    val showCard = hasUp && isTopBarContentVisible()
     binding.cardUpQuick.visibility = if (showCard) View.VISIBLE else View.GONE
     updatePlayerInfoUpUi()
     if (!hasUp) return

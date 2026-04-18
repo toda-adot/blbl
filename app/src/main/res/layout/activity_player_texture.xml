@@ -100,7 +100,7 @@
         android:background="@drawable/bg_player_top_scrim"
         android:paddingHorizontal="@dimen/player_top_bar_padding_h"
         android:paddingVertical="@dimen/player_top_bar_padding_v"
-        android:visibility="gone"
+        android:visibility="invisible"
         app:layout_constraintEnd_toEndOf="@id/player_view"
         app:layout_constraintStart_toStartOf="@id/player_view"
         app:layout_constraintTop_toTopOf="parent">

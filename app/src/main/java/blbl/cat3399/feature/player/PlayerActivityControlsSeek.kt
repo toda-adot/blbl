@@ -58,7 +58,7 @@ internal fun PlayerActivity.setControlsVisible(visible: Boolean) {
 
     binding.controlsRow.visibility = if (show) View.VISIBLE else View.GONE
     binding.tvTime.visibility = if (show) View.VISIBLE else View.GONE
-    binding.topBar.visibility = if (show) View.VISIBLE else View.GONE
+    updateTopBarUi()
     binding.cardUpQuick.visibility = if (show && currentUpMid > 0L) View.VISIBLE else View.GONE
     binding.bottomBar.visibility = if (show) View.VISIBLE else View.GONE
     if (show) {
@@ -71,6 +71,27 @@ internal fun PlayerActivity.setControlsVisible(visible: Boolean) {
     updatePersistentBottomProgressBarVisibility()
     onTouchOverlayStateChanged()
     if (visible) noteUserInteraction() else autoHideJob?.cancel()
+}
+
+internal fun PlayerActivity.isTopBarContentVisible(): Boolean = osdMode != PlayerActivity.OsdMode.Hidden
+
+internal fun PlayerActivity.updateClockVisibility() {
+    val showClock = isTopBarContentVisible() || BiliClient.prefs.playerPersistentClockEnabled
+    binding.tvClock.visibility = if (showClock) View.VISIBLE else View.GONE
+}
+
+internal fun PlayerActivity.updateTopBarUi() {
+    val showContent = isTopBarContentVisible()
+    binding.topBar.visibility = View.VISIBLE
+    if (showContent) {
+        binding.topBar.setBackgroundResource(R.drawable.bg_player_top_scrim_strong)
+    } else {
+        binding.topBar.background = null
+    }
+    val contentVisibility = if (showContent) View.VISIBLE else View.INVISIBLE
+    binding.btnBack.visibility = contentVisibility
+    binding.titleRow.visibility = contentVisibility
+    updateClockVisibility()
 }
 
 internal fun PlayerActivity.showSeekOsd() {

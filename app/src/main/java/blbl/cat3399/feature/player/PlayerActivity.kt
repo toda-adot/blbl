@@ -681,12 +681,11 @@ class PlayerActivity : BaseActivity() {
         setContentView(binding.root)
         Immersive.apply(this, prefs.fullscreenEnabled)
         PlayerUiMode.applyVideo(this, binding)
-        binding.topBar.setBackgroundResource(R.drawable.bg_player_top_scrim_strong)
         ensureBottomBarConstraintSets()
 
-        binding.topBar.visibility = View.GONE
         binding.bottomBar.visibility = View.GONE
         binding.progressPersistentBottom.max = SEEK_MAX
+        updateTopBarUi()
         resetBufferingOverlayState()
         binding.tvSeekHint.visibility = View.GONE
         binding.btnBack.setOnClickListener { finish() }

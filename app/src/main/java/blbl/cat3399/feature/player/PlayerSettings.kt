@@ -62,6 +62,7 @@ internal object PlayerSettingKeys {
     const val DANMAKU_ALLOW_SPECIAL = "danmaku_allow_special"
     const val DEBUG_INFO = "debug_info"
     const val PERSISTENT_BOTTOM_PROGRESS = "persistent_bottom_progress"
+    const val PERSISTENT_CLOCK = "persistent_clock"
 }
 
 internal enum class PlayerSettingsMenu {
@@ -397,6 +398,13 @@ internal fun PlayerActivity.handleSettingsItemClick(item: PlayerSettingsAdapter.
                 afterApplied = { updatePersistentBottomProgressBarVisibility() },
             )
 
+        PlayerSettingKeys.PERSISTENT_CLOCK -> {
+            val appPrefs = BiliClient.prefs
+            appPrefs.playerPersistentClockEnabled = !appPrefs.playerPersistentClockEnabled
+            updateClockVisibility()
+            refreshSettingsPanel()
+        }
+
         else -> AppToast.show(this, "暂未实现：${item.title}")
     }
 }
@@ -491,6 +499,11 @@ private fun PlayerActivity.buildRootSettingsItems(
             PlayerSettingKeys.PERSISTENT_BOTTOM_PROGRESS,
             "底部常驻进度条",
             session.persistentBottomProgressEnabled.switchText(),
+        ),
+        settingItem(
+            PlayerSettingKeys.PERSISTENT_CLOCK,
+            "常驻时间显示",
+            prefs.playerPersistentClockEnabled.switchText(),
         ),
         settingItem(PlayerSettingKeys.PLAYER_ENGINE, "播放器内核", playerEngineSubtitle()),
         settingItem(PlayerSettingKeys.DEBUG_INFO, "调试信息", session.debugEnabled.switchText()),

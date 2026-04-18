@@ -334,6 +334,12 @@ class SettingsRenderer(
                         null,
                     ),
                     SettingEntry(
+                        SettingId.PlayerPersistentClockEnabled,
+                        "常驻时间显示",
+                        if (prefs.playerPersistentClockEnabled) "开" else "关",
+                        null,
+                    ),
+                    SettingEntry(
                         SettingId.PlayerTouchGesturesEnabled,
                         "触摸手势",
                         if (prefs.playerTouchGesturesEnabled) "开" else "关",
