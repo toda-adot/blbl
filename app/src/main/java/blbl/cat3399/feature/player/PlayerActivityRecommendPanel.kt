@@ -181,7 +181,9 @@ internal fun PlayerActivity.showListPanel(
     kind: PlayerVideoListKind,
     restoreFocusView: View,
     preferContentFocus: Boolean = false,
+    openedFromMenuKey: Boolean = false,
 ) {
+    onOverlayPanelShown(openedFromMenuKey = openedFromMenuKey)
     setControlsVisible(true)
     bottomCardPanelPreferContentFocus = preferContentFocus
     bottomCardPanelRestoreFocus = java.lang.ref.WeakReference(restoreFocusView)
@@ -236,7 +238,10 @@ private fun PlayerActivity.preferredListPanelKindForShortcutTarget(target: Playe
     }
 }
 
-internal fun PlayerActivity.hideBottomCardPanel(restoreFocus: Boolean) {
+internal fun PlayerActivity.hideBottomCardPanel(
+    restoreFocus: Boolean,
+    dismissTarget: PlayerActivity.PanelDismissTarget? = PlayerActivity.PanelDismissTarget.ResumeOsd,
+) {
     if (!isBottomCardPanelVisible() && binding.recommendScrim.visibility != View.VISIBLE) return
     binding.recommendScrim.visibility = View.GONE
     binding.recommendPanel.visibility = View.GONE
@@ -244,9 +249,9 @@ internal fun PlayerActivity.hideBottomCardPanel(restoreFocus: Boolean) {
     (binding.recyclerRecommend.adapter as? VideoCardAdapter)?.submit(emptyList())
     binding.tvListPanelEmpty.visibility = View.GONE
     binding.recyclerRecommend.visibility = View.VISIBLE
-    if (!restoreFocus) return
+    dismissTarget?.let { onLastOverlayPanelDismissed(it) }
+    if (!restoreFocus || dismissTarget == PlayerActivity.PanelDismissTarget.Fullscreen) return
 
-    setControlsVisible(true)
     val target = bottomCardPanelRestoreFocus?.get()
     binding.root.post {
         when {

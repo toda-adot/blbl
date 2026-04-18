@@ -210,7 +210,13 @@ class PlayerActivity : BaseActivity() {
         SeekTransient,
     }
 
+    internal enum class PanelDismissTarget {
+        ResumeOsd,
+        Fullscreen,
+    }
+
     internal var osdMode: OsdMode = OsdMode.Hidden
+    internal var menuRevealedPanelSessionActive: Boolean = false
 
     internal var currentBvid: String = ""
     internal var currentCid: Long = -1L
@@ -1589,22 +1595,43 @@ class PlayerActivity : BaseActivity() {
         when (keyCode) {
             KeyEvent.KEYCODE_MENU,
             KeyEvent.KEYCODE_SETTINGS,
-            KeyEvent.KEYCODE_INFO,
-            KeyEvent.KEYCODE_GUIDE,
             -> {
+                if (menuRevealedPanelSessionActive && isOverlayPanelVisible()) {
+                    when {
+                        isCommentsPanelVisible() -> hideCommentsPanel(dismissTarget = PanelDismissTarget.Fullscreen)
+                        isSettingsPanelVisible() -> hideSettingsPanel(dismissTarget = PanelDismissTarget.Fullscreen)
+                        isBottomCardPanelVisible() ->
+                            hideBottomCardPanel(
+                                restoreFocus = false,
+                                dismissTarget = PanelDismissTarget.Fullscreen,
+                            )
+                        else -> {
+                            menuRevealedPanelSessionActive = false
+                            setControlsVisible(false)
+                        }
+                    }
+                    return true
+                }
                 if (isSidePanelVisible()) {
-                    if (!isSettingsPanelVisible() && (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_SETTINGS)) {
+                    if (!isSettingsPanelVisible()) {
                         showSettingsPanel()
                     }
                     return true
                 }
                 if (
-                    osdMode == OsdMode.Hidden &&
-                    (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_SETTINGS)
+                    osdMode == OsdMode.Hidden
                 ) {
-                    showSettingsPanel()
+                    showSettingsPanel(openedFromMenuKey = true)
                     return true
                 }
+                setControlsVisible(true)
+                focusFirstControl()
+                return true
+            }
+
+            KeyEvent.KEYCODE_INFO,
+            KeyEvent.KEYCODE_GUIDE,
+            -> {
                 setControlsVisible(true)
                 focusFirstControl()
                 return true
@@ -1634,7 +1661,7 @@ class PlayerActivity : BaseActivity() {
                         "back:down action=side_panel",
                         "settings=${if (isSettingsPanelVisible()) 1 else 0} comments=${if (isCommentsPanelVisible()) 1 else 0} thread=${if (isCommentThreadVisible()) 1 else 0}",
                     )
-                    return onSidePanelBackPressed()
+                    return onSidePanelBackPressed(dismissTarget = PanelDismissTarget.ResumeOsd)
                 }
                 if (osdMode != OsdMode.Hidden) {
                     exitTraceLog("back:down action=hide_osd", "osd=$osdMode")

@@ -31,6 +31,24 @@ internal fun PlayerActivity.isCommentThreadVisible(): Boolean = binding.recycler
 
 internal fun PlayerActivity.isSidePanelVisible(): Boolean = isSettingsPanelVisible() || isCommentsPanelVisible()
 
+internal fun PlayerActivity.isOverlayPanelVisible(): Boolean = isSidePanelVisible() || isBottomCardPanelVisible()
+
+internal fun PlayerActivity.onOverlayPanelShown(openedFromMenuKey: Boolean) {
+    when {
+        openedFromMenuKey -> menuRevealedPanelSessionActive = true
+        !isOverlayPanelVisible() -> menuRevealedPanelSessionActive = false
+    }
+}
+
+internal fun PlayerActivity.onLastOverlayPanelDismissed(dismissTarget: PlayerActivity.PanelDismissTarget) {
+    if (isOverlayPanelVisible()) return
+    menuRevealedPanelSessionActive = false
+    when (dismissTarget) {
+        PlayerActivity.PanelDismissTarget.ResumeOsd -> setControlsVisible(true)
+        PlayerActivity.PanelDismissTarget.Fullscreen -> setControlsVisible(false)
+    }
+}
+
 internal fun PlayerActivity.initSidePanels() {
     binding.chipCommentSortHot.setOnClickListener { applyCommentSort(COMMENT_SORT_HOT) }
     binding.chipCommentSortNew.setOnClickListener { applyCommentSort(COMMENT_SORT_NEW) }
@@ -225,8 +243,9 @@ internal fun PlayerActivity.toggleSettingsPanel() {
     }
 }
 
-internal fun PlayerActivity.showSettingsPanel() {
-    hideBottomCardPanel(restoreFocus = false)
+internal fun PlayerActivity.showSettingsPanel(openedFromMenuKey: Boolean = false) {
+    onOverlayPanelShown(openedFromMenuKey = openedFromMenuKey)
+    hideBottomCardPanel(restoreFocus = false, dismissTarget = null)
     val enteringSidePanelMode = !isSidePanelVisible()
     if (enteringSidePanelMode) {
         sidePanelFocusReturn.capture(currentFocus)
@@ -246,13 +265,19 @@ internal fun PlayerActivity.showSettingsPanel() {
     syncPlayerInfoPanelVisibility()
 }
 
-internal fun PlayerActivity.hideSettingsPanel() {
-    setControlsVisible(true)
-    // Restore focus before hiding the panel to avoid the system picking a temporary fallback
-    // (e.g. top bar back button) and causing a visible "double jump".
-    sidePanelFocusReturn.restoreAndClear(fallback = binding.btnAdvanced, postOnFail = false)
+internal fun PlayerActivity.hideSettingsPanel(
+    dismissTarget: PlayerActivity.PanelDismissTarget = PlayerActivity.PanelDismissTarget.ResumeOsd,
+) {
+    if (dismissTarget == PlayerActivity.PanelDismissTarget.ResumeOsd) {
+        // Restore focus before hiding the panel to avoid the system picking a temporary fallback
+        // (e.g. top bar back button) and causing a visible "double jump".
+        sidePanelFocusReturn.restoreAndClear(fallback = binding.btnAdvanced, postOnFail = false)
+    } else {
+        sidePanelFocusReturn.clear()
+    }
     binding.settingsPanel.visibility = View.GONE
     syncPlayerInfoPanelVisibility()
+    onLastOverlayPanelDismissed(dismissTarget)
 }
 
 internal fun PlayerActivity.toggleCommentsPanel() {
@@ -263,8 +288,9 @@ internal fun PlayerActivity.toggleCommentsPanel() {
     }
 }
 
-internal fun PlayerActivity.showCommentsPanel() {
-    hideBottomCardPanel(restoreFocus = false)
+internal fun PlayerActivity.showCommentsPanel(openedFromMenuKey: Boolean = false) {
+    onOverlayPanelShown(openedFromMenuKey = openedFromMenuKey)
+    hideBottomCardPanel(restoreFocus = false, dismissTarget = null)
     val enteringSidePanelMode = !isSidePanelVisible()
     if (enteringSidePanelMode) {
         sidePanelFocusReturn.capture(currentFocus)
@@ -278,19 +304,27 @@ internal fun PlayerActivity.showCommentsPanel() {
     syncPlayerInfoPanelVisibility()
 }
 
-internal fun PlayerActivity.hideCommentsPanel() {
-    setControlsVisible(true)
+internal fun PlayerActivity.hideCommentsPanel(
+    dismissTarget: PlayerActivity.PanelDismissTarget = PlayerActivity.PanelDismissTarget.ResumeOsd,
+) {
     closeCommentImageViewer(restoreFocus = false)
-    // Restore focus before hiding the panel to avoid a brief focus jump to an unrelated control.
-    sidePanelFocusReturn.restoreAndClear(fallback = binding.btnComments, postOnFail = false)
+    if (dismissTarget == PlayerActivity.PanelDismissTarget.ResumeOsd) {
+        // Restore focus before hiding the panel to avoid a brief focus jump to an unrelated control.
+        sidePanelFocusReturn.restoreAndClear(fallback = binding.btnComments, postOnFail = false)
+    } else {
+        sidePanelFocusReturn.clear()
+    }
     expandedCommentRpids.clear()
     (binding.recyclerComments.adapter as? PlayerCommentsAdapter)?.invalidateSizing()
     (binding.recyclerCommentThread.adapter as? PlayerCommentsAdapter)?.invalidateSizing()
     binding.commentsPanel.visibility = View.GONE
     syncPlayerInfoPanelVisibility()
+    onLastOverlayPanelDismissed(dismissTarget)
 }
 
-internal fun PlayerActivity.onSidePanelBackPressed(): Boolean {
+internal fun PlayerActivity.onSidePanelBackPressed(
+    dismissTarget: PlayerActivity.PanelDismissTarget = PlayerActivity.PanelDismissTarget.ResumeOsd,
+): Boolean {
     if (isCommentThreadVisible()) {
         showCommentsRoot()
         focusCommentsPanel(targetRpid = commentThreadReturnFocusRpid)
@@ -298,14 +332,14 @@ internal fun PlayerActivity.onSidePanelBackPressed(): Boolean {
         return true
     }
     if (isCommentsPanelVisible()) {
-        hideCommentsPanel()
+        hideCommentsPanel(dismissTarget = dismissTarget)
         return true
     }
     if (isSettingsPanelVisible()) {
         if (backFromSettingsSubmenu()) {
             return true
         }
-        hideSettingsPanel()
+        hideSettingsPanel(dismissTarget = dismissTarget)
         return true
     }
     return false

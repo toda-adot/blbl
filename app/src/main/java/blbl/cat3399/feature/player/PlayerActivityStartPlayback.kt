@@ -163,7 +163,8 @@ internal fun PlayerActivity.resetPlaybackStateForNewMedia(
     binding.settingsPanel.visibility = View.GONE
     binding.commentsPanel.visibility = View.GONE
     binding.playerInfoPanel.visibility = View.GONE
-    hideBottomCardPanel(restoreFocus = false)
+    hideBottomCardPanel(restoreFocus = false, dismissTarget = null)
+    menuRevealedPanelSessionActive = false
     binding.recyclerComments.visibility = View.VISIBLE
     binding.recyclerCommentThread.visibility = View.GONE
     binding.rowCommentSort.visibility = View.VISIBLE
