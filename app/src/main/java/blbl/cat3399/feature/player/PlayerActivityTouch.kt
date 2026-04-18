@@ -43,6 +43,23 @@ internal fun PlayerActivity.releaseTouchGestures() {
     tapSeekActiveUntilMs = 0L
 }
 
+internal fun isSwipeGestureStartExcludedByEdge(
+    x: Float,
+    y: Float,
+    width: Float,
+    height: Float,
+    edgeRatio: Float,
+): Boolean {
+    if (width <= 0f || height <= 0f) return false
+    val clampedRatio = edgeRatio.coerceIn(0f, 0.5f)
+    val excludedWidth = width * clampedRatio
+    val excludedHeight = height * clampedRatio
+    return x <= excludedWidth ||
+        x >= width - excludedWidth ||
+        y <= excludedHeight ||
+        y >= height - excludedHeight
+}
+
 private fun PlayerActivity.requireTouchOverlayBinding(): ViewPlayerTouchOverlayBinding {
     val existing = findViewById<View>(R.id.player_touch_overlay_root)
     if (existing != null) return ViewPlayerTouchOverlayBinding.bind(existing)
@@ -148,6 +165,7 @@ internal class PlayerTouchController(
     private var touchSeekStartPosMs = 0L
     private var touchSeekDurationMs = 0L
     private var touchSeekBufferedPosMs = 0L
+    private var swipeGestureStartAllowed = true
     private var volumeStart = 0
     private var brightnessStart = 0.5f
     private var touchLocked = false
@@ -184,6 +202,7 @@ internal class PlayerTouchController(
         finishActiveGesture(commitSeek = false)
         stopBoostPlayback()
         pointerDown = false
+        swipeGestureStartAllowed = true
         tapSuppressed = false
     }
 
@@ -274,6 +293,14 @@ internal class PlayerTouchController(
         downY = event.y
         lastX = event.x
         lastY = event.y
+        swipeGestureStartAllowed =
+            !isSwipeGestureStartExcludedByEdge(
+                x = event.x,
+                y = event.y,
+                width = gestureLayerWidth(),
+                height = gestureLayerHeight(),
+                edgeRatio = PlayerActivity.TOUCH_GESTURE_EXCLUDED_EDGE_RATIO,
+            )
         pendingRightEdgeBoostJob?.cancel()
     }
 
@@ -306,6 +333,13 @@ internal class PlayerTouchController(
             TouchGestureMode.Volume -> updateVolumeGesture(event.y)
             TouchGestureMode.Blocked -> Unit
             TouchGestureMode.None -> {
+                if (!swipeGestureStartAllowed) {
+                    if (shouldBlockGestureRecognition(absDx = absDx, absDy = absDy)) {
+                        gestureMode = TouchGestureMode.Blocked
+                    }
+                    return
+                }
+
                 val directionRatio = PlayerActivity.TOUCH_GESTURE_DIRECTION_RATIO
                 if (absDx >= seekActivationThresholdPx && absDx >= absDy * directionRatio) {
                     if (!startSeekGesture()) {
@@ -330,9 +364,7 @@ internal class PlayerTouchController(
                     return
                 }
 
-                if (absDx > touchSlopPx * PlayerActivity.TOUCH_GESTURE_BLOCK_THRESHOLD_MULTIPLIER ||
-                    absDy > touchSlopPx * PlayerActivity.TOUCH_GESTURE_BLOCK_THRESHOLD_MULTIPLIER
-                ) {
+                if (shouldBlockGestureRecognition(absDx = absDx, absDy = absDy)) {
                     gestureMode = TouchGestureMode.Blocked
                 }
             }
@@ -348,6 +380,7 @@ internal class PlayerTouchController(
             stopBoostPlayback()
         }
         finishActiveGesture(commitSeek = !cancelled)
+        swipeGestureStartAllowed = true
 
         if (cancelled) {
             tapSuppressed = false
@@ -580,8 +613,18 @@ internal class PlayerTouchController(
             ?: binding.playerView.width.toFloat()
     }
 
+    private fun gestureLayerHeight(): Float {
+        return overlayBinding.touchGestureLayer.height.toFloat().takeIf { it > 0f }
+            ?: binding.playerView.height.toFloat()
+    }
+
     private fun hasExceededTouchSlop(x: Float, y: Float): Boolean {
         return abs(x - downX) > touchSlopPx || abs(y - downY) > touchSlopPx
+    }
+
+    private fun shouldBlockGestureRecognition(absDx: Float, absDy: Float): Boolean {
+        return absDx > touchSlopPx * PlayerActivity.TOUCH_GESTURE_BLOCK_THRESHOLD_MULTIPLIER ||
+            absDy > touchSlopPx * PlayerActivity.TOUCH_GESTURE_BLOCK_THRESHOLD_MULTIPLIER
     }
 
     private fun computeSeekDeltaMs(dx: Float, width: Float, durationMs: Long): Long {

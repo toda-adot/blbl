@@ -3662,6 +3662,7 @@ class PlayerActivity : BaseActivity() {
         internal const val HOLD_SCRUB_SHORT_SPEED_MS_PER_S = 4_000L
         private const val BACK_DOUBLE_PRESS_WINDOW_MS = 2_500L
         internal const val TOUCH_LOCK_UI_HIDE_DELAY_MS = 2_500L
+        internal const val TOUCH_GESTURE_EXCLUDED_EDGE_RATIO = 0.03f
         internal const val TOUCH_GESTURE_EDGE_LONG_PRESS_THRESHOLD = 0.18f
         internal const val TOUCH_GESTURE_SIDE_VERTICAL_THRESHOLD = 0.32f
         internal const val TOUCH_GESTURE_DIRECTION_RATIO = 1.2f
