@@ -35,6 +35,17 @@
     <string name="my_btn_play">播放</string>
     <string name="my_btn_followed">已追</string>
     <string name="video_card_progress_complete">已看完</string>
+    <string name="video_card_action_watch_later">添加到稍后再看</string>
+    <string name="video_card_action_open_detail">进入详情页</string>
+    <string name="video_card_action_open_up">进入UP主页</string>
+    <string name="video_card_action_not_interested">不感兴趣</string>
+    <string name="video_card_action_delete">删除</string>
+    <string name="video_card_action_watch_later_done">已添加到稍后再看</string>
+    <string name="video_card_action_delete_done">已删除</string>
+    <string name="video_card_action_not_interested_done">将减少此视频展示</string>
+    <string name="video_card_action_open_detail_unsupported">当前卡片暂不支持进入详情页</string>
+    <string name="video_card_action_missing_video_id">未获取到视频信息</string>
+    <string name="video_card_action_failed">操作失败</string>
     <string name="search_clear">清空</string>
     <string name="search_backspace">后退</string>
     <string name="search_action">搜索</string>

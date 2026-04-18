@@ -535,9 +535,13 @@ class AppPrefs(context: Context) {
                     MAIN_BACK_FOCUS_SCHEME_C,
                     -> v
                     else -> MAIN_BACK_FOCUS_SCHEME_A
-                }
+            }
             prefs.edit().putString(KEY_MAIN_BACK_FOCUS_SCHEME, normalized).apply()
         }
+
+    var videoCardLongPressAction: String
+        get() = normalizeVideoCardLongPressAction(prefs.getString(KEY_VIDEO_CARD_LONG_PRESS_ACTION, VIDEO_CARD_LONG_PRESS_ACTION_MANUAL))
+        set(value) = prefs.edit().putString(KEY_VIDEO_CARD_LONG_PRESS_ACTION, normalizeVideoCardLongPressAction(value)).apply()
 
     var playerDebugEnabled: Boolean
         get() = prefs.getBoolean(KEY_PLAYER_DEBUG, false)
@@ -878,6 +882,12 @@ class AppPrefs(context: Context) {
         const val MAIN_BACK_FOCUS_SCHEME_B = "B"
         const val MAIN_BACK_FOCUS_SCHEME_C = "C"
 
+        const val VIDEO_CARD_LONG_PRESS_ACTION_MANUAL = "manual"
+        const val VIDEO_CARD_LONG_PRESS_ACTION_WATCH_LATER = "watch_later"
+        const val VIDEO_CARD_LONG_PRESS_ACTION_OPEN_DETAIL = "open_detail"
+        const val VIDEO_CARD_LONG_PRESS_ACTION_OPEN_UP = "open_up"
+        const val VIDEO_CARD_LONG_PRESS_ACTION_DISMISS = "dismiss"
+
         private const val KEY_DISCLAIMER_ACCEPTED = "disclaimer_accepted"
         private const val KEY_WEB_REFRESH_TOKEN = "web_refresh_token"
         private const val KEY_WEB_COOKIE_REFRESH_CHECKED_EPOCH_DAY = "web_cookie_refresh_checked_epoch_day"
@@ -939,6 +949,7 @@ class AppPrefs(context: Context) {
         private const val KEY_TAB_SWITCH_FOLLOWS_FOCUS = "tab_switch_follows_focus"
         private const val KEY_MAIN_AUTO_HIDE_SIDEBAR_ON_ENTER_CONTENT = "main_auto_hide_sidebar_on_enter_content"
         private const val KEY_MAIN_BACK_FOCUS_SCHEME = "main_back_focus_scheme"
+        private const val KEY_VIDEO_CARD_LONG_PRESS_ACTION = "video_card_long_press_action"
         private const val KEY_PLAYER_DEBUG = "player_debug_enabled"
         private const val KEY_PLAYER_DOUBLE_BACK_TO_EXIT = "player_double_back_on_ended"
         private const val KEY_PLAYER_DOWN_KEY_OSD_FOCUS_TARGET = "player_down_key_osd_focus_target"
@@ -978,6 +989,16 @@ class AppPrefs(context: Context) {
         const val DANMAKU_LANE_DENSITY_SPARSE = "sparse"
         const val DANMAKU_LANE_DENSITY_STANDARD = "standard"
         const val DANMAKU_LANE_DENSITY_DENSE = "dense"
+
+        fun normalizeVideoCardLongPressAction(value: String?): String {
+            return when (value?.trim()) {
+                VIDEO_CARD_LONG_PRESS_ACTION_WATCH_LATER -> VIDEO_CARD_LONG_PRESS_ACTION_WATCH_LATER
+                VIDEO_CARD_LONG_PRESS_ACTION_OPEN_DETAIL -> VIDEO_CARD_LONG_PRESS_ACTION_OPEN_DETAIL
+                VIDEO_CARD_LONG_PRESS_ACTION_OPEN_UP -> VIDEO_CARD_LONG_PRESS_ACTION_OPEN_UP
+                VIDEO_CARD_LONG_PRESS_ACTION_DISMISS -> VIDEO_CARD_LONG_PRESS_ACTION_DISMISS
+                else -> VIDEO_CARD_LONG_PRESS_ACTION_MANUAL
+            }
+        }
 
         const val DANMAKU_FONT_WEIGHT_NORMAL = "normal"
         const val DANMAKU_FONT_WEIGHT_BOLD = "bold"

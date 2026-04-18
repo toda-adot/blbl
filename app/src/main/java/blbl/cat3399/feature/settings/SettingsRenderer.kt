@@ -224,6 +224,12 @@ class SettingsRenderer(
                         SettingsText.mainBackFocusSchemeText(prefs.mainBackFocusScheme),
                         null,
                     ),
+                    SettingEntry(
+                        SettingId.VideoCardLongPressAction,
+                        "长按视频卡片",
+                        SettingsText.videoCardLongPressActionText(prefs.videoCardLongPressAction),
+                        null,
+                    ),
                     SettingEntry(SettingId.CustomPageEnabled, "自定义页", if (prefs.customPageConfig.enabled) "开" else "关", null),
                     SettingEntry(
                         SettingId.CustomPageContent,

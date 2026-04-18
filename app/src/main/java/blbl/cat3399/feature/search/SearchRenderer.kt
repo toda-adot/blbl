@@ -9,6 +9,7 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.widget.doAfterTextChanged
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.SimpleItemAnimator
@@ -37,10 +38,12 @@ import blbl.cat3399.feature.live.LivePlayerActivity
 import blbl.cat3399.feature.live.LiveRoomAdapter
 import blbl.cat3399.feature.my.BangumiFollowAdapter
 import blbl.cat3399.feature.player.PlayerActivity
-import blbl.cat3399.feature.player.PlayerPlaylistItem
-import blbl.cat3399.feature.player.PlayerPlaylistStore
-import blbl.cat3399.feature.video.VideoDetailActivity
+import blbl.cat3399.feature.video.VideoCardActionController
 import blbl.cat3399.feature.video.VideoCardAdapter
+import blbl.cat3399.feature.video.VideoCardDismissBehavior
+import blbl.cat3399.feature.video.buildVideoCardPlaylistToken
+import blbl.cat3399.feature.video.openVideoDetailFromCards
+import blbl.cat3399.feature.video.removeVideoCardAndRestoreFocus
 import com.google.android.material.card.MaterialCardView
 
 class SearchRenderer(
@@ -136,42 +139,37 @@ class SearchRenderer(
     private var resultsGridController: DpadGridController? = null
 
     init {
+        val actionController =
+            VideoCardActionController(
+                context = viewContext,
+                scope = fragment.viewLifecycleOwner.lifecycleScope,
+                dismissBehavior = VideoCardDismissBehavior.LocalNotInterested,
+                onOpenDetail = { _, pos -> openDetail(pos) },
+                onOpenUp = { card -> fragment.openUpDetailFromVideoCard(card) },
+                onCardRemoved = { stableKey ->
+                    binding.recyclerResults.removeVideoCardAndRestoreFocus(
+                        adapter = videoAdapter,
+                        stableKey = stableKey,
+                        isAlive = { !released && fragment.isResumed },
+                    )
+                },
+            )
         videoAdapter =
             VideoCardAdapter(
                 onClick = { card, pos ->
                     val cards = videoAdapter.snapshot()
-                    val playlistItems =
-                        cards.map {
-                            PlayerPlaylistItem(
-                                bvid = it.bvid,
-                                cid = it.cid,
-                                title = it.title,
-                            )
-                        }
-                    val token =
-                        PlayerPlaylistStore.put(
-                            items = playlistItems,
-                            index = pos,
-                            source = "Search",
-                            uiCards = cards,
-                        )
                     if (BiliClient.prefs.playerOpenDetailBeforePlay) {
-                        fragment.startActivity(
-                            Intent(viewContext, VideoDetailActivity::class.java)
-                                .putExtra(VideoDetailActivity.EXTRA_BVID, card.bvid)
-                                .putExtra(VideoDetailActivity.EXTRA_CID, card.cid ?: -1L)
-                                .apply { card.aid?.let { putExtra(VideoDetailActivity.EXTRA_AID, it) } }
-                                .putExtra(VideoDetailActivity.EXTRA_TITLE, card.title)
-                                .putExtra(VideoDetailActivity.EXTRA_COVER_URL, card.coverUrl)
-                                .apply {
-                                    card.ownerName.takeIf { it.isNotBlank() }?.let { putExtra(VideoDetailActivity.EXTRA_OWNER_NAME, it) }
-                                    card.ownerFace?.takeIf { it.isNotBlank() }?.let { putExtra(VideoDetailActivity.EXTRA_OWNER_AVATAR, it) }
-                                    card.ownerMid?.takeIf { it > 0L }?.let { putExtra(VideoDetailActivity.EXTRA_OWNER_MID, it) }
-                                }
-                                .putExtra(VideoDetailActivity.EXTRA_PLAYLIST_TOKEN, token)
-                                .putExtra(VideoDetailActivity.EXTRA_PLAYLIST_INDEX, pos),
+                        viewContext.openVideoDetailFromCards(
+                            cards = cards,
+                            position = pos,
+                            source = "Search",
                         )
                     } else {
+                        val token =
+                            cards.buildVideoCardPlaylistToken(
+                                index = pos,
+                                source = "Search",
+                            ) ?: return@VideoCardAdapter
                         fragment.startActivity(
                             Intent(viewContext, PlayerActivity::class.java)
                                 .putExtra(PlayerActivity.EXTRA_BVID, card.bvid)
@@ -185,6 +183,7 @@ class SearchRenderer(
                     fragment.openUpDetailFromVideoCard(card)
                     true
                 },
+                actionDelegate = actionController,
             )
     }
 
@@ -618,6 +617,14 @@ class SearchRenderer(
         (binding.recyclerResults.layoutManager as? GridLayoutManager)?.spanCount = spanCountForCurrentTab()
         maybeConsumePendingResultFocus()
         restoreMediaFocusIfNeeded()
+    }
+
+    private fun openDetail(position: Int) {
+        viewContext.openVideoDetailFromCards(
+            cards = videoAdapter.snapshot(),
+            position = position,
+            source = "Search",
+        )
     }
 
     fun onShown() {

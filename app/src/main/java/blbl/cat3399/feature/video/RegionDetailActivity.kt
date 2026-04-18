@@ -24,8 +24,6 @@ import blbl.cat3399.core.ui.requestFocusFirstItemOrSelfAfterRefresh
 import blbl.cat3399.databinding.ActivityRegionDetailBinding
 import blbl.cat3399.feature.following.UpDetailActivity
 import blbl.cat3399.feature.player.PlayerActivity
-import blbl.cat3399.feature.player.PlayerPlaylistItem
-import blbl.cat3399.feature.player.PlayerPlaylistStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -38,7 +36,7 @@ class RegionDetailActivity : BaseActivity() {
     private val rid: Int by lazy { intent.getIntExtra(EXTRA_RID, -1).takeIf { it > 0 } ?: -1 }
     private val title: String by lazy { intent.getStringExtra(EXTRA_TITLE).orEmpty().trim() }
 
-    private val loadedBvids = HashSet<String>()
+    private val loadedStableKeys = HashSet<String>()
     private var isLoadingMore: Boolean = false
     private var endReached: Boolean = false
     private var page: Int = 1
@@ -64,42 +62,37 @@ class RegionDetailActivity : BaseActivity() {
         binding.tvTitle.text = title.ifBlank { "分区" }
 
         if (!this::adapter.isInitialized) {
+            val actionController =
+                VideoCardActionController(
+                    context = this,
+                    scope = lifecycleScope,
+                    dismissBehavior = VideoCardDismissBehavior.LocalNotInterested,
+                    onOpenDetail = { _, pos -> openDetail(pos) },
+                    onOpenUp = { card -> openUpDetailFromVideoCard(card) },
+                    onCardRemoved = { stableKey ->
+                        binding.recycler.removeVideoCardAndRestoreFocus(
+                            adapter = adapter,
+                            stableKey = stableKey,
+                            isAlive = { !isFinishing && !isDestroyed },
+                        )
+                    },
+                )
             adapter =
                 VideoCardAdapter(
                     onClick = { card, pos ->
                         val cards = adapter.snapshot()
-                        val playlistItems =
-                            cards.map {
-                                PlayerPlaylistItem(
-                                    bvid = it.bvid,
-                                    cid = it.cid,
-                                    title = it.title,
-                                )
-                            }
-                        val token =
-                            PlayerPlaylistStore.put(
-                                items = playlistItems,
-                                index = pos,
-                                source = "RegionDetail:$rid",
-                                uiCards = cards,
-                            )
                         if (BiliClient.prefs.playerOpenDetailBeforePlay) {
-                            startActivity(
-                                Intent(this, VideoDetailActivity::class.java)
-                                    .putExtra(VideoDetailActivity.EXTRA_BVID, card.bvid)
-                                    .putExtra(VideoDetailActivity.EXTRA_CID, card.cid ?: -1L)
-                                    .apply { card.aid?.let { putExtra(VideoDetailActivity.EXTRA_AID, it) } }
-                                    .putExtra(VideoDetailActivity.EXTRA_TITLE, card.title)
-                                    .putExtra(VideoDetailActivity.EXTRA_COVER_URL, card.coverUrl)
-                                    .apply {
-                                        card.ownerName.takeIf { it.isNotBlank() }?.let { putExtra(VideoDetailActivity.EXTRA_OWNER_NAME, it) }
-                                        card.ownerFace?.takeIf { it.isNotBlank() }?.let { putExtra(VideoDetailActivity.EXTRA_OWNER_AVATAR, it) }
-                                        card.ownerMid?.takeIf { it > 0L }?.let { putExtra(VideoDetailActivity.EXTRA_OWNER_MID, it) }
-                                    }
-                                    .putExtra(VideoDetailActivity.EXTRA_PLAYLIST_TOKEN, token)
-                                    .putExtra(VideoDetailActivity.EXTRA_PLAYLIST_INDEX, pos),
+                            openVideoDetailFromCards(
+                                cards = cards,
+                                position = pos,
+                                source = "RegionDetail:$rid",
                             )
                         } else {
+                            val token =
+                                cards.buildVideoCardPlaylistToken(
+                                    index = pos,
+                                    source = "RegionDetail:$rid",
+                                ) ?: return@VideoCardAdapter
                             startActivity(
                                 Intent(this, PlayerActivity::class.java)
                                     .putExtra(PlayerActivity.EXTRA_BVID, card.bvid)
@@ -113,6 +106,7 @@ class RegionDetailActivity : BaseActivity() {
                         openUpDetailFromVideoCard(card)
                         true
                     },
+                    actionDelegate = actionController,
                 )
         }
 
@@ -206,7 +200,7 @@ class RegionDetailActivity : BaseActivity() {
     private fun resetAndLoad() {
         pendingFocusFirstItem = true
         dpadGridController?.parkFocusForDataSetReset()
-        loadedBvids.clear()
+        loadedStableKeys.clear()
         isLoadingMore = false
         endReached = false
         page = 1
@@ -225,16 +219,26 @@ class RegionDetailActivity : BaseActivity() {
 
         lifecycleScope.launch {
             try {
-                val res = BiliApi.regionLatestPage(rid = rid, pn = page, ps = 24)
+                var targetPage = page
+                var visibleItems = emptyList<VideoCard>()
+                var hasMore = false
+                while (true) {
+                    val res = BiliApi.regionLatestPage(rid = rid, pn = targetPage, ps = 24)
+                    if (token != requestToken) return@launch
+                    hasMore = res.hasMore
+                    visibleItems = VideoCardVisibilityFilter.filterVisibleFresh(res.items, loadedStableKeys)
+                    targetPage++
+                    if (visibleItems.isNotEmpty() || !hasMore || res.items.isEmpty()) break
+                }
                 if (token != requestToken) return@launch
-                val filtered = res.items.filter { loadedBvids.add(it.bvid) }
-                if (isRefresh) adapter.submit(filtered) else adapter.append(filtered)
+                visibleItems.forEach { loadedStableKeys.add(it.stableKey()) }
+                if (isRefresh) adapter.submit(visibleItems) else adapter.append(visibleItems)
                 maybeFocusFirstItem()
-                if (!res.hasMore || res.items.isEmpty()) endReached = true
-                page++
+                endReached = !hasMore
+                page = targetPage
                 AppLog.i(
                     "RegionDetail",
-                    "load ok rid=$rid add=${filtered.size} total=${adapter.itemCount} cost=${SystemClock.uptimeMillis() - startAt}ms",
+                    "load ok rid=$rid add=${visibleItems.size} total=${adapter.itemCount} cost=${SystemClock.uptimeMillis() - startAt}ms",
                 )
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
@@ -316,6 +320,14 @@ class RegionDetailActivity : BaseActivity() {
         return GridSpanPolicy.fixedSpanCountForWidthDp(
             widthDp = widthDp,
             overrideSpanCount = BiliClient.prefs.gridSpanCount,
+        )
+    }
+
+    private fun openDetail(position: Int) {
+        openVideoDetailFromCards(
+            cards = adapter.snapshot(),
+            position = position,
+            source = "RegionDetail:$rid",
         )
     }
 

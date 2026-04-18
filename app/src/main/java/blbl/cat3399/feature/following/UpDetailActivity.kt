@@ -32,10 +32,13 @@ import blbl.cat3399.core.util.Format
 import blbl.cat3399.databinding.ActivityUpDetailBinding
 import blbl.cat3399.feature.login.QrLoginActivity
 import blbl.cat3399.feature.player.PlayerActivity
-import blbl.cat3399.feature.player.PlayerPlaylistItem
-import blbl.cat3399.feature.player.PlayerPlaylistStore
-import blbl.cat3399.feature.video.VideoDetailActivity
+import blbl.cat3399.feature.video.VideoCardActionController
 import blbl.cat3399.feature.video.VideoCardAdapter
+import blbl.cat3399.feature.video.VideoCardDismissBehavior
+import blbl.cat3399.feature.video.VideoCardVisibilityFilter
+import blbl.cat3399.feature.video.buildVideoCardPlaylistToken
+import blbl.cat3399.feature.video.openVideoDetailFromCards
+import blbl.cat3399.feature.video.removeVideoCardAndRestoreFocus
 import com.google.android.material.R as MaterialR
 import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.tabs.TabLayout
@@ -69,7 +72,7 @@ class UpDetailActivity : BaseActivity() {
     private var pendingFocusHeaderAfterExpand: Boolean = false
     private var tabSwitchRequestToken: Int = 0
 
-    private val loadedArchiveBvids = HashSet<String>()
+    private val loadedArchiveStableKeys = HashSet<String>()
     private var archiveIsLoadingMore: Boolean = false
     private var archiveEndReached: Boolean = false
     private var archiveNextPage: Int = 1
@@ -282,6 +285,27 @@ class UpDetailActivity : BaseActivity() {
     }
 
     private fun setupAdapters() {
+        val archiveActionController =
+            VideoCardActionController(
+                context = this,
+                scope = lifecycleScope,
+                dismissBehavior = VideoCardDismissBehavior.LocalNotInterested,
+                onOpenDetail = { _, pos ->
+                    openDetailFromCards(
+                        cards = archiveAdapter.snapshot(),
+                        index = pos,
+                        source = "UpDetail:$mid:archive",
+                    )
+                },
+                onOpenUp = { card -> openUpDetailForCard(card) },
+                onCardRemoved = { stableKey ->
+                    binding.recycler.removeVideoCardAndRestoreFocus(
+                        adapter = archiveAdapter,
+                        stableKey = stableKey,
+                        isAlive = { !isFinishing && !isDestroyed && currentTab == UpTab.ARCHIVE },
+                    )
+                },
+            )
         archiveAdapter =
             VideoCardAdapter(
                 onClick = { _, pos ->
@@ -291,6 +315,7 @@ class UpDetailActivity : BaseActivity() {
                         source = "UpDetail:$mid:archive",
                     )
                 },
+                actionDelegate = archiveActionController,
             )
 
         sectionAdapter =
@@ -626,7 +651,7 @@ class UpDetailActivity : BaseActivity() {
             }
         }
         archiveRequestToken++
-        loadedArchiveBvids.clear()
+        loadedArchiveStableKeys.clear()
         archiveNextPage = 1
         archiveEndReached = false
         archiveIsLoadingMore = false
@@ -654,8 +679,9 @@ class UpDetailActivity : BaseActivity() {
                 archiveNextPage = targetPage + 1
                 archiveEndReached = page.items.isEmpty() || !page.hasMore
 
-                val filtered = page.items.filter { loadedArchiveBvids.add(it.bvid) }
-                if (isRefresh) archiveAdapter.submit(filtered) else archiveAdapter.append(filtered)
+                val visibleItems = VideoCardVisibilityFilter.filterVisibleFresh(page.items, loadedArchiveStableKeys)
+                visibleItems.forEach { loadedArchiveStableKeys.add(it.stableKey()) }
+                if (isRefresh) archiveAdapter.submit(visibleItems) else archiveAdapter.append(visibleItems)
 
                 binding.recycler.post {
                     maybeConsumePendingFocusFirstContentAfterLoad()
@@ -1233,38 +1259,18 @@ class UpDetailActivity : BaseActivity() {
         if (cards.isEmpty()) return
         val pos = index.coerceIn(0, cards.size - 1)
         val card = cards[pos]
-        val playlistItems =
-            cards.map {
-                PlayerPlaylistItem(
-                    bvid = it.bvid,
-                    cid = it.cid,
-                    title = it.title,
-                )
-            }
-        val token =
-            PlayerPlaylistStore.put(
-                items = playlistItems,
-                index = pos,
-                source = source,
-                uiCards = cards,
-            )
         if (BiliClient.prefs.playerOpenDetailBeforePlay) {
-            startActivity(
-                Intent(this, VideoDetailActivity::class.java)
-                    .putExtra(VideoDetailActivity.EXTRA_BVID, card.bvid)
-                    .putExtra(VideoDetailActivity.EXTRA_CID, card.cid ?: -1L)
-                    .apply { card.aid?.let { putExtra(VideoDetailActivity.EXTRA_AID, it) } }
-                    .putExtra(VideoDetailActivity.EXTRA_TITLE, card.title)
-                    .putExtra(VideoDetailActivity.EXTRA_COVER_URL, card.coverUrl)
-                    .apply {
-                        card.ownerName.takeIf { it.isNotBlank() }?.let { putExtra(VideoDetailActivity.EXTRA_OWNER_NAME, it) }
-                        card.ownerFace?.takeIf { it.isNotBlank() }?.let { putExtra(VideoDetailActivity.EXTRA_OWNER_AVATAR, it) }
-                        card.ownerMid?.takeIf { it > 0L }?.let { putExtra(VideoDetailActivity.EXTRA_OWNER_MID, it) }
-                    }
-                    .putExtra(VideoDetailActivity.EXTRA_PLAYLIST_TOKEN, token)
-                    .putExtra(VideoDetailActivity.EXTRA_PLAYLIST_INDEX, pos),
+            openVideoDetailFromCards(
+                cards = cards,
+                position = pos,
+                source = source,
             )
         } else {
+            val token =
+                cards.buildVideoCardPlaylistToken(
+                    index = pos,
+                    source = source,
+                ) ?: return
             startActivity(
                 Intent(this, PlayerActivity::class.java)
                     .putExtra(PlayerActivity.EXTRA_BVID, card.bvid)
@@ -1273,6 +1279,31 @@ class UpDetailActivity : BaseActivity() {
                     .putExtra(PlayerActivity.EXTRA_PLAYLIST_INDEX, pos),
             )
         }
+    }
+
+    private fun openDetailFromCards(
+        cards: List<blbl.cat3399.core.model.VideoCard>,
+        index: Int,
+        source: String,
+    ) {
+        openVideoDetailFromCards(
+            cards = cards,
+            position = index,
+            source = source,
+        )
+    }
+
+    private fun openUpDetailForCard(card: blbl.cat3399.core.model.VideoCard) {
+        val targetMid = card.ownerMid?.takeIf { it > 0L } ?: mid
+        if (targetMid == mid) return
+        startActivity(
+            Intent(this, UpDetailActivity::class.java)
+                .putExtra(EXTRA_MID, targetMid)
+                .apply {
+                    card.ownerName.takeIf { it.isNotBlank() }?.let { putExtra(EXTRA_NAME, it) }
+                    card.ownerFace?.takeIf { it.isNotBlank() }?.let { putExtra(EXTRA_AVATAR, it) }
+                },
+        )
     }
 
     private fun spanCountForWidth(): Int {

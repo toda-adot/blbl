@@ -56,6 +56,115 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toTopOf="@id/guideline_cover_fade_top" />
 
+            <View
+                android:id="@+id/v_action_scrim"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:background="@drawable/bg_video_card_action_scrim"
+                android:importantForAccessibility="no"
+                android:visibility="gone"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent" />
+
+            <LinearLayout
+                android:id="@+id/ll_actions"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="@dimen/video_card_action_group_margin_h"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:visibility="gone"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent">
+
+                <FrameLayout
+                    android:id="@+id/btn_action_watch_later"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/video_card_action_button_height"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_video_card_action_button"
+                    android:clickable="true"
+                    android:focusable="false"
+                    android:foreground="?attr/selectableItemBackgroundBorderless">
+
+                    <ImageView
+                        android:id="@+id/iv_action_watch_later"
+                        android:layout_width="@dimen/video_card_action_icon_watch_later_size"
+                        android:layout_height="@dimen/video_card_action_icon_watch_later_size"
+                        android:layout_gravity="center"
+                        android:contentDescription="@string/video_card_action_watch_later"
+                        android:src="@drawable/ic_video_card_watch_later"
+                        android:tint="@android:color/white" />
+                </FrameLayout>
+
+                <FrameLayout
+                    android:id="@+id/btn_action_detail"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/video_card_action_button_height"
+                    android:layout_marginStart="@dimen/video_card_action_gap"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_video_card_action_button"
+                    android:clickable="true"
+                    android:focusable="false"
+                    android:foreground="?attr/selectableItemBackgroundBorderless">
+
+                    <ImageView
+                        android:id="@+id/iv_action_detail"
+                        android:layout_width="@dimen/video_card_action_icon_detail_size"
+                        android:layout_height="@dimen/video_card_action_icon_detail_size"
+                        android:layout_gravity="center"
+                        android:contentDescription="@string/video_card_action_open_detail"
+                        android:src="@drawable/ic_player_detail"
+                        android:tint="@android:color/white" />
+                </FrameLayout>
+
+                <FrameLayout
+                    android:id="@+id/btn_action_up"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/video_card_action_button_height"
+                    android:layout_marginStart="@dimen/video_card_action_gap"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_video_card_action_button"
+                    android:clickable="true"
+                    android:focusable="false"
+                    android:foreground="?attr/selectableItemBackgroundBorderless">
+
+                    <ImageView
+                        android:id="@+id/iv_action_up"
+                        android:layout_width="@dimen/video_card_action_icon_up_size"
+                        android:layout_height="@dimen/video_card_action_icon_up_size"
+                        android:layout_gravity="center"
+                        android:contentDescription="@string/video_card_action_open_up"
+                        android:src="@drawable/ic_player_up"
+                        android:tint="@android:color/white" />
+                </FrameLayout>
+
+                <FrameLayout
+                    android:id="@+id/btn_action_dismiss"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/video_card_action_button_height"
+                    android:layout_marginStart="@dimen/video_card_action_gap"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_video_card_action_button"
+                    android:clickable="true"
+                    android:focusable="false"
+                    android:foreground="?attr/selectableItemBackgroundBorderless">
+
+                    <ImageView
+                        android:id="@+id/iv_action_dismiss"
+                        android:layout_width="@dimen/video_card_action_icon_dismiss_size"
+                        android:layout_height="@dimen/video_card_action_icon_dismiss_size"
+                        android:layout_gravity="center"
+                        android:contentDescription="@string/video_card_action_not_interested"
+                        android:src="@drawable/ic_video_card_delete"
+                        android:tint="@android:color/white" />
+                </FrameLayout>
+            </LinearLayout>
+
             <ProgressBar
                 android:id="@+id/progress_watch"
                 style="?android:attr/progressBarStyleHorizontal"

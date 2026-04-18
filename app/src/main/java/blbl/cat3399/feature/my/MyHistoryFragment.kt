@@ -25,10 +25,14 @@ import blbl.cat3399.core.ui.requestFocusFirstItemOrSelfAfterRefresh
 import blbl.cat3399.databinding.FragmentVideoGridBinding
 import blbl.cat3399.feature.following.openUpDetailFromVideoCard
 import blbl.cat3399.feature.player.PlayerActivity
-import blbl.cat3399.feature.player.PlayerPlaylistItem
-import blbl.cat3399.feature.player.PlayerPlaylistStore
-import blbl.cat3399.feature.video.VideoDetailActivity
+import blbl.cat3399.feature.video.VideoCardActionController
 import blbl.cat3399.feature.video.VideoCardAdapter
+import blbl.cat3399.feature.video.VideoCardDismissBehavior
+import blbl.cat3399.feature.video.VideoCardVisibilityFilter
+import blbl.cat3399.feature.video.buildVideoCardPlaylistToken
+import blbl.cat3399.feature.video.historyVideoCardPlaylistItem
+import blbl.cat3399.feature.video.openVideoDetailFromCards
+import blbl.cat3399.feature.video.removeVideoCardAndRestoreFocus
 import blbl.cat3399.ui.RefreshKeyHandler
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -55,49 +59,43 @@ class MyHistoryFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler 
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         if (!::adapter.isInitialized) {
+            val actionController =
+                VideoCardActionController(
+                    context = requireContext(),
+                    scope = viewLifecycleOwner.lifecycleScope,
+                    dismissBehavior = VideoCardDismissBehavior.DeleteHistory,
+                    onOpenDetail = { _, pos -> openDetail(pos) },
+                    onOpenUp = { card -> openUpDetailFromVideoCard(card) },
+                    onCardRemoved = { stableKey ->
+                        _binding?.recycler?.removeVideoCardAndRestoreFocus(
+                            adapter = adapter,
+                            stableKey = stableKey,
+                            isAlive = { _binding != null && isResumed },
+                        )
+                    },
+                )
             adapter =
                 VideoCardAdapter(
                     onClick = { card, pos ->
                         val cards = adapter.snapshot()
-                        val playlistItems =
-                            cards.map {
-                                PlayerPlaylistItem(
-                                    bvid = it.bvid,
-                                    cid = it.cid,
-                                    epId = it.epId,
-                                    aid = it.aid,
-                                    title = it.title,
-                                    seasonId = it.seasonId,
-                                )
-                            }
-                        val token =
-                            PlayerPlaylistStore.put(
-                                items = playlistItems,
-                                index = pos,
-                                source = "MyHistory",
-                                uiCards = cards,
-                            )
                         val canOpenDetail =
                             BiliClient.prefs.playerOpenDetailBeforePlay &&
                                 card.bvid.isNotBlank() &&
                                 (card.epId == null || card.epId <= 0L)
                         if (canOpenDetail) {
-                            startActivity(
-                                Intent(requireContext(), VideoDetailActivity::class.java)
-                                    .putExtra(VideoDetailActivity.EXTRA_BVID, card.bvid)
-                                    .putExtra(VideoDetailActivity.EXTRA_CID, card.cid ?: -1L)
-                                    .apply { card.aid?.let { putExtra(VideoDetailActivity.EXTRA_AID, it) } }
-                                    .putExtra(VideoDetailActivity.EXTRA_TITLE, card.title)
-                                    .putExtra(VideoDetailActivity.EXTRA_COVER_URL, card.coverUrl)
-                                    .apply {
-                                        card.ownerName.takeIf { it.isNotBlank() }?.let { putExtra(VideoDetailActivity.EXTRA_OWNER_NAME, it) }
-                                        card.ownerFace?.takeIf { it.isNotBlank() }?.let { putExtra(VideoDetailActivity.EXTRA_OWNER_AVATAR, it) }
-                                        card.ownerMid?.takeIf { it > 0L }?.let { putExtra(VideoDetailActivity.EXTRA_OWNER_MID, it) }
-                                    }
-                                    .putExtra(VideoDetailActivity.EXTRA_PLAYLIST_TOKEN, token)
-                                    .putExtra(VideoDetailActivity.EXTRA_PLAYLIST_INDEX, pos),
+                            requireContext().openVideoDetailFromCards(
+                                cards = cards,
+                                position = pos,
+                                source = "MyHistory",
+                                playlistItemFactory = ::historyVideoCardPlaylistItem,
                             )
                         } else {
+                            val token =
+                                cards.buildVideoCardPlaylistToken(
+                                    index = pos,
+                                    source = "MyHistory",
+                                    playlistItemFactory = ::historyVideoCardPlaylistItem,
+                                ) ?: return@VideoCardAdapter
                             startActivity(
                                 Intent(requireContext(), PlayerActivity::class.java)
                                     .putExtra(PlayerActivity.EXTRA_BVID, card.bvid)
@@ -119,6 +117,7 @@ class MyHistoryFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler 
                         openUpDetailFromVideoCard(card)
                         true
                     },
+                    actionDelegate = actionController,
                 )
         }
         binding.recycler.adapter = adapter
@@ -290,8 +289,7 @@ class MyHistoryFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler 
                             var c = cursor
                             var filtered = emptyList<VideoCard>()
                             var nextCursor: BiliApi.HistoryCursor? = cursor
-                            var attempts = 0
-                            while (attempts < 5) {
+                            while (true) {
                                 val page =
                                     BiliApi.historyCursor(
                                         max = c?.max ?: 0,
@@ -301,17 +299,10 @@ class MyHistoryFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler 
                                     )
 
                                 nextCursor = page.cursor
-                                val seen = HashSet<String>(page.items.size)
-                                filtered =
-                                    page.items.filter { card ->
-                                        val k = card.stableKey()
-                                        if (loadedKeys.contains(k)) return@filter false
-                                        seen.add(k)
-                                    }
-                                if (filtered.isNotEmpty() || nextCursor == null) break
+                                filtered = VideoCardVisibilityFilter.filterVisibleFresh(page.items, loadedKeys)
+                                if (filtered.isNotEmpty() || nextCursor == null || nextCursor == c || page.items.isEmpty()) break
                                 if (nextCursor == c) break
                                 c = nextCursor
-                                attempts++
                             }
                             FetchedPage(items = filtered, nextCursor = nextCursor)
                         },
@@ -319,7 +310,7 @@ class MyHistoryFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler 
                             PagedGridStateMachine.Update(
                                 items = fetched.items,
                                 nextKey = fetched.nextCursor,
-                                endReached = fetched.items.isEmpty(),
+                                endReached = fetched.nextCursor == null,
                             )
                         },
                     )
@@ -377,5 +368,14 @@ class MyHistoryFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler 
         dpadGridController = null
         _binding = null
         super.onDestroyView()
+    }
+
+    private fun openDetail(position: Int) {
+        requireContext().openVideoDetailFromCards(
+            cards = adapter.snapshot(),
+            position = position,
+            source = "MyHistory",
+            playlistItemFactory = ::historyVideoCardPlaylistItem,
+        )
     }
 }

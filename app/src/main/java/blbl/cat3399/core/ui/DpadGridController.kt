@@ -13,6 +13,40 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.StaggeredGridLayoutManager
 import blbl.cat3399.R
 
+internal fun interface DpadItemKeyHandler {
+    fun onInterceptKey(
+        itemView: View,
+        keyCode: Int,
+        event: KeyEvent,
+    ): Boolean
+}
+
+internal fun View.setDpadItemKeyHandler(handler: DpadItemKeyHandler?) {
+    setTag(R.id.tag_dpad_item_key_handler, handler)
+}
+
+internal fun View.dispatchToDpadItemKeyHandler(
+    keyCode: Int,
+    event: KeyEvent,
+): Boolean {
+    val handler = getTag(R.id.tag_dpad_item_key_handler) as? DpadItemKeyHandler ?: return false
+    return handler.onInterceptKey(this, keyCode, event)
+}
+
+internal fun View.dispatchToAncestorDpadItemKeyHandler(
+    keyCode: Int,
+    event: KeyEvent,
+): Boolean {
+    var current: View? = this
+    while (current != null) {
+        if (current.dispatchToDpadItemKeyHandler(keyCode, event)) {
+            return true
+        }
+        current = current.parent as? View
+    }
+    return false
+}
+
 /**
  * A reusable DPAD focus controller for grid-like RecyclerViews.
  *
@@ -156,11 +190,15 @@ internal class DpadGridController(
         object : RecyclerView.OnChildAttachStateChangeListener {
             override fun onChildViewAttachedToWindow(view: View) {
                 if (config.enableCenterLongPressToLongClick) {
-                    view.setTag(R.id.tag_long_press_handled, false)
+                view.setTag(R.id.tag_long_press_handled, false)
                 }
                 view.setOnKeyListener { v, keyCode, event ->
                     if (!installed) return@setOnKeyListener false
                     if (!config.isEnabled()) return@setOnKeyListener false
+
+                    if (v.dispatchToDpadItemKeyHandler(keyCode, event)) {
+                        return@setOnKeyListener true
+                    }
 
                     if (config.enableCenterLongPressToLongClick && handleCenterLongPress(v, keyCode, event)) {
                         return@setOnKeyListener true

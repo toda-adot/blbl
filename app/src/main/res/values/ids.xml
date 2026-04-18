@@ -7,6 +7,7 @@
     <item name="tag_app_toast_hide_runnable" type="id" />
     <item name="tag_popup_host" type="id" />
     <item name="tag_recycler_focus_request_token" type="id" />
+    <item name="tag_dpad_item_key_handler" type="id" />
     <item name="tag_player_list_panel_base_metrics" type="id" />
     <item name="tag_player_side_panels_base_metrics" type="id" />
     <item name="tag_player_subtitle_base_padding" type="id" />

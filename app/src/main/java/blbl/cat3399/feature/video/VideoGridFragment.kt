@@ -29,8 +29,6 @@ import blbl.cat3399.core.ui.requestFocusAdapterPositionReliable
 import blbl.cat3399.core.ui.requestFocusFirstItemOrSelfAfterRefresh
 import blbl.cat3399.databinding.FragmentVideoGridBinding
 import blbl.cat3399.feature.following.openUpDetailFromVideoCard
-import blbl.cat3399.feature.player.PlayerPlaylistItem
-import blbl.cat3399.feature.player.PlayerPlaylistStore
 import blbl.cat3399.feature.player.PlayerActivity
 import blbl.cat3399.ui.RefreshKeyHandler
 import kotlinx.coroutines.CancellationException
@@ -44,6 +42,7 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
 
     private data class FetchedPage(
         val items: List<VideoCard>,
+        val nextKey: PagingKey,
         val hasMore: Boolean,
     )
 
@@ -58,7 +57,7 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
     private val source: String by lazy { requireArguments().getString(ARG_SOURCE) ?: SRC_POPULAR }
     private val rid: Int by lazy { requireArguments().getInt(ARG_RID, 0) }
 
-    private val loadedBvids = HashSet<String>()
+    private val loadedStableKeys = HashSet<String>()
     private val paging = PagedGridStateMachine(initialKey = PagingKey(page = 1, recommendFetchRow = 1))
 
     private var pendingFocusFirstCardFromTab: Boolean = false
@@ -77,43 +76,38 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         AppLog.d("VideoGrid", "onViewCreated source=$source rid=$rid t=${SystemClock.uptimeMillis()}")
         if (!::adapter.isInitialized) {
+            val actionController =
+                VideoCardActionController(
+                    context = requireContext(),
+                    scope = viewLifecycleOwner.lifecycleScope,
+                    dismissBehavior = VideoCardDismissBehavior.LocalNotInterested,
+                    onOpenDetail = { _, pos -> openDetail(pos) },
+                    onOpenUp = { card -> openUpDetailFromVideoCard(card) },
+                    onCardRemoved = { stableKey ->
+                        _binding?.recycler?.removeVideoCardAndRestoreFocus(
+                            adapter = adapter,
+                            stableKey = stableKey,
+                            isAlive = { _binding != null && isResumed },
+                        )
+                    },
+                )
             adapter =
                 VideoCardAdapter(
                     onClick = { card, pos ->
                         AppLog.i("VideoGrid", "click bvid=${card.bvid} cid=${card.cid}")
                         val cards = adapter.snapshot()
-                        val playlistItems =
-                            cards.map {
-                                PlayerPlaylistItem(
-                                    bvid = it.bvid,
-                                    cid = it.cid,
-                                    title = it.title,
-                                )
-                            }
-                        val token =
-                            PlayerPlaylistStore.put(
-                                items = playlistItems,
-                                index = pos,
-                                source = "VideoGrid:$source/$rid",
-                                uiCards = cards,
-                            )
                         if (BiliClient.prefs.playerOpenDetailBeforePlay) {
-                            startActivity(
-                                Intent(requireContext(), VideoDetailActivity::class.java)
-                                    .putExtra(VideoDetailActivity.EXTRA_BVID, card.bvid)
-                                    .putExtra(VideoDetailActivity.EXTRA_CID, card.cid ?: -1L)
-                                    .apply { card.aid?.let { putExtra(VideoDetailActivity.EXTRA_AID, it) } }
-                                    .putExtra(VideoDetailActivity.EXTRA_TITLE, card.title)
-                                    .putExtra(VideoDetailActivity.EXTRA_COVER_URL, card.coverUrl)
-                                    .apply {
-                                        card.ownerName.takeIf { it.isNotBlank() }?.let { putExtra(VideoDetailActivity.EXTRA_OWNER_NAME, it) }
-                                        card.ownerFace?.takeIf { it.isNotBlank() }?.let { putExtra(VideoDetailActivity.EXTRA_OWNER_AVATAR, it) }
-                                        card.ownerMid?.takeIf { it > 0L }?.let { putExtra(VideoDetailActivity.EXTRA_OWNER_MID, it) }
-                                    }
-                                    .putExtra(VideoDetailActivity.EXTRA_PLAYLIST_TOKEN, token)
-                                    .putExtra(VideoDetailActivity.EXTRA_PLAYLIST_INDEX, pos),
+                            requireContext().openVideoDetailFromCards(
+                                cards = cards,
+                                position = pos,
+                                source = "VideoGrid:$source/$rid",
                             )
                         } else {
+                            val token =
+                                cards.buildVideoCardPlaylistToken(
+                                    index = pos,
+                                    source = "VideoGrid:$source/$rid",
+                                ) ?: return@VideoCardAdapter
                             startActivity(
                                 Intent(requireContext(), PlayerActivity::class.java)
                                     .putExtra(PlayerActivity.EXTRA_BVID, card.bvid)
@@ -127,6 +121,7 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
                         openUpDetailFromVideoCard(card)
                         true
                     },
+                    actionDelegate = actionController,
                 )
         }
         binding.recycler.adapter = adapter
@@ -242,7 +237,7 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
     private fun resetAndLoad() {
         AppLog.d("VideoGrid", "resetAndLoad source=$source rid=$rid t=${SystemClock.uptimeMillis()}")
         paging.reset()
-        loadedBvids.clear()
+        loadedStableKeys.clear()
         loadNextPage(isRefresh = true)
     }
 
@@ -261,60 +256,18 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
                 val result =
                     paging.loadNextPage(
                         isRefresh = isRefresh,
-                        fetch = { key ->
-                            val ps = 24
-                            when (source) {
-                                SRC_RECOMMEND -> {
-                                    val items = BiliApi.recommend(freshIdx = key.page, ps = ps, fetchRow = key.recommendFetchRow)
-                                    FetchedPage(items = items, hasMore = items.isNotEmpty())
-                                }
-
-                                SRC_REGION -> {
-                                    val res = BiliApi.regionLatestPage(rid = rid, pn = key.page, ps = ps)
-                                    FetchedPage(items = res.items, hasMore = res.hasMore)
-                                }
-
-                                else -> {
-                                    val res = BiliApi.popularPage(pn = key.page, ps = ps)
-                                    FetchedPage(items = res.items, hasMore = res.hasMore)
-                                }
-                            }
-                        },
+                        fetch = ::fetchVisiblePage,
                         reduce = { key, fetched ->
-                            val cards = fetched.items
-                            if (cards.isEmpty()) {
-                                PagedGridStateMachine.Update(
-                                    items = emptyList<VideoCard>(),
-                                    nextKey = key,
-                                    endReached = true,
-                                )
-                            } else {
-                                val seen = HashSet<String>(cards.size)
-                                val filtered =
-                                    cards.filter {
-                                        if (loadedBvids.contains(it.bvid)) return@filter false
-                                        seen.add(it.bvid)
-                                    }
-                                val nextKey =
-                                    if (source == SRC_RECOMMEND) {
-                                        key.copy(
-                                            page = key.page + 1,
-                                            recommendFetchRow = key.recommendFetchRow + cards.size,
-                                        )
-                                    } else {
-                                        key.copy(page = key.page + 1)
-                                    }
-                                PagedGridStateMachine.Update(
-                                    items = filtered,
-                                    nextKey = nextKey,
-                                    endReached = !fetched.hasMore,
-                                )
-                            }
+                            PagedGridStateMachine.Update(
+                                items = fetched.items,
+                                nextKey = fetched.nextKey,
+                                endReached = !fetched.hasMore,
+                            )
                         },
                     )
 
                 val applied = result.appliedOrNull() ?: return@launch
-                applied.items.forEach { loadedBvids.add(it.bvid) }
+                applied.items.forEach { loadedStableKeys.add(it.stableKey()) }
                 if (applied.isRefresh) {
                     adapter.submit(applied.items)
                 } else if (applied.items.isNotEmpty()) {
@@ -535,6 +488,69 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
         dpadGridController = null
         _binding = null
         super.onDestroyView()
+    }
+
+    private suspend fun fetchVisiblePage(key: PagingKey): FetchedPage {
+        val ps = 24
+        var currentKey = key
+        while (true) {
+            val rawPage = fetchRawPage(currentKey, ps)
+            val visibleItems = VideoCardVisibilityFilter.filterVisibleFresh(rawPage.items, loadedStableKeys)
+            if (visibleItems.isNotEmpty() || !rawPage.hasMore || rawPage.nextKey == currentKey || rawPage.items.isEmpty()) {
+                return FetchedPage(
+                    items = visibleItems,
+                    nextKey = rawPage.nextKey,
+                    hasMore = rawPage.hasMore,
+                )
+            }
+            currentKey = rawPage.nextKey
+        }
+    }
+
+    private suspend fun fetchRawPage(
+        key: PagingKey,
+        ps: Int,
+    ): FetchedPage {
+        return when (source) {
+            SRC_RECOMMEND -> {
+                val items = BiliApi.recommend(freshIdx = key.page, ps = ps, fetchRow = key.recommendFetchRow)
+                FetchedPage(
+                    items = items,
+                    nextKey =
+                        key.copy(
+                            page = key.page + 1,
+                            recommendFetchRow = key.recommendFetchRow + items.size,
+                        ),
+                    hasMore = items.isNotEmpty(),
+                )
+            }
+
+            SRC_REGION -> {
+                val res = BiliApi.regionLatestPage(rid = rid, pn = key.page, ps = ps)
+                FetchedPage(
+                    items = res.items,
+                    nextKey = key.copy(page = key.page + 1),
+                    hasMore = res.hasMore,
+                )
+            }
+
+            else -> {
+                val res = BiliApi.popularPage(pn = key.page, ps = ps)
+                FetchedPage(
+                    items = res.items,
+                    nextKey = key.copy(page = key.page + 1),
+                    hasMore = res.hasMore,
+                )
+            }
+        }
+    }
+
+    private fun openDetail(position: Int) {
+        requireContext().openVideoDetailFromCards(
+            cards = adapter.snapshot(),
+            position = position,
+            source = "VideoGrid:$source/$rid",
+        )
     }
 
     companion object {

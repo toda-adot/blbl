@@ -830,6 +830,27 @@ class SettingsInteractionHandler(
                 }
             }
 
+            SettingId.VideoCardLongPressAction -> {
+                val options =
+                    listOf(
+                        AppPrefs.VIDEO_CARD_LONG_PRESS_ACTION_MANUAL to "手动选择",
+                        AppPrefs.VIDEO_CARD_LONG_PRESS_ACTION_WATCH_LATER to "添加到稍后再看",
+                        AppPrefs.VIDEO_CARD_LONG_PRESS_ACTION_OPEN_DETAIL to "进入详情页",
+                        AppPrefs.VIDEO_CARD_LONG_PRESS_ACTION_OPEN_UP to "进入UP主页",
+                        AppPrefs.VIDEO_CARD_LONG_PRESS_ACTION_DISMISS to "不感兴趣",
+                    )
+                showChoiceDialog(
+                    title = "长按视频卡片",
+                    items = options.map { it.second },
+                    current = SettingsText.videoCardLongPressActionText(prefs.videoCardLongPressAction),
+                ) { selected ->
+                    val value = options.firstOrNull { it.second == selected }?.first ?: AppPrefs.VIDEO_CARD_LONG_PRESS_ACTION_MANUAL
+                    prefs.videoCardLongPressAction = value
+                    AppToast.show(activity, "长按视频卡片：$selected")
+                    renderer.refreshSection(entry.id)
+                }
+            }
+
             SettingId.StartupPage -> {
                 val options =
                     MainRootNavRegistry.startupSpecs().map { spec ->

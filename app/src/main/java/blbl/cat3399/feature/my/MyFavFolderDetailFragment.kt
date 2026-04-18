@@ -25,10 +25,13 @@ import blbl.cat3399.core.ui.uiScaler
 import blbl.cat3399.databinding.FragmentMyFavFolderDetailBinding
 import blbl.cat3399.feature.following.openUpDetailFromVideoCard
 import blbl.cat3399.feature.player.PlayerActivity
-import blbl.cat3399.feature.player.PlayerPlaylistItem
-import blbl.cat3399.feature.player.PlayerPlaylistStore
-import blbl.cat3399.feature.video.VideoDetailActivity
+import blbl.cat3399.feature.video.VideoCardActionController
 import blbl.cat3399.feature.video.VideoCardAdapter
+import blbl.cat3399.feature.video.VideoCardDismissBehavior
+import blbl.cat3399.feature.video.VideoCardVisibilityFilter
+import blbl.cat3399.feature.video.buildVideoCardPlaylistToken
+import blbl.cat3399.feature.video.openVideoDetailFromCards
+import blbl.cat3399.feature.video.removeVideoCardAndRestoreFocus
 import blbl.cat3399.ui.RefreshKeyHandler
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -44,7 +47,7 @@ class MyFavFolderDetailFragment : Fragment(), RefreshKeyHandler {
     private val mediaId: Long by lazy { requireArguments().getLong(ARG_MEDIA_ID) }
     private val title: String by lazy { requireArguments().getString(ARG_TITLE).orEmpty() }
 
-    private val loadedBvids = HashSet<String>()
+    private val loadedStableKeys = HashSet<String>()
     private var isLoadingMore: Boolean = false
     private var endReached: Boolean = false
     private var page: Int = 1
@@ -63,42 +66,37 @@ class MyFavFolderDetailFragment : Fragment(), RefreshKeyHandler {
         applyHeaderSizing(uiScale = UiScale.factor(requireContext()))
 
         if (!::adapter.isInitialized) {
+            val actionController =
+                VideoCardActionController(
+                    context = requireContext(),
+                    scope = viewLifecycleOwner.lifecycleScope,
+                    dismissBehavior = VideoCardDismissBehavior.DeleteFavFolderItem(mediaId = mediaId),
+                    onOpenDetail = { _, pos -> openDetail(pos) },
+                    onOpenUp = { card -> openUpDetailFromVideoCard(card) },
+                    onCardRemoved = { stableKey ->
+                        _binding?.recycler?.removeVideoCardAndRestoreFocus(
+                            adapter = adapter,
+                            stableKey = stableKey,
+                            isAlive = { _binding != null && isResumed },
+                        )
+                    },
+                )
             adapter =
                 VideoCardAdapter(
                     onClick = { card, pos ->
                         val cards = adapter.snapshot()
-                        val playlistItems =
-                            cards.map {
-                                PlayerPlaylistItem(
-                                    bvid = it.bvid,
-                                    cid = it.cid,
-                                    title = it.title,
-                                )
-                            }
-                        val token =
-                            PlayerPlaylistStore.put(
-                                items = playlistItems,
-                                index = pos,
-                                source = "MyFavFolderDetail:$mediaId",
-                                uiCards = cards,
-                            )
                         if (BiliClient.prefs.playerOpenDetailBeforePlay) {
-                            startActivity(
-                                Intent(requireContext(), VideoDetailActivity::class.java)
-                                    .putExtra(VideoDetailActivity.EXTRA_BVID, card.bvid)
-                                    .putExtra(VideoDetailActivity.EXTRA_CID, card.cid ?: -1L)
-                                    .apply { card.aid?.let { putExtra(VideoDetailActivity.EXTRA_AID, it) } }
-                                    .putExtra(VideoDetailActivity.EXTRA_TITLE, card.title)
-                                    .putExtra(VideoDetailActivity.EXTRA_COVER_URL, card.coverUrl)
-                                    .apply {
-                                        card.ownerName.takeIf { it.isNotBlank() }?.let { putExtra(VideoDetailActivity.EXTRA_OWNER_NAME, it) }
-                                        card.ownerFace?.takeIf { it.isNotBlank() }?.let { putExtra(VideoDetailActivity.EXTRA_OWNER_AVATAR, it) }
-                                        card.ownerMid?.takeIf { it > 0L }?.let { putExtra(VideoDetailActivity.EXTRA_OWNER_MID, it) }
-                                    }
-                                    .putExtra(VideoDetailActivity.EXTRA_PLAYLIST_TOKEN, token)
-                                    .putExtra(VideoDetailActivity.EXTRA_PLAYLIST_INDEX, pos),
+                            requireContext().openVideoDetailFromCards(
+                                cards = cards,
+                                position = pos,
+                                source = "MyFavFolderDetail:$mediaId",
                             )
                         } else {
+                            val token =
+                                cards.buildVideoCardPlaylistToken(
+                                    index = pos,
+                                    source = "MyFavFolderDetail:$mediaId",
+                                ) ?: return@VideoCardAdapter
                             startActivity(
                                 Intent(requireContext(), PlayerActivity::class.java)
                                     .putExtra(PlayerActivity.EXTRA_BVID, card.bvid)
@@ -112,6 +110,7 @@ class MyFavFolderDetailFragment : Fragment(), RefreshKeyHandler {
                         openUpDetailFromVideoCard(card)
                         true
                     },
+                    actionDelegate = actionController,
                 )
         }
         binding.recycler.adapter = adapter
@@ -218,7 +217,7 @@ class MyFavFolderDetailFragment : Fragment(), RefreshKeyHandler {
     private fun resetAndLoad() {
         pendingFocusFirstItem = true
         dpadGridController?.parkFocusForDataSetReset()
-        loadedBvids.clear()
+        loadedStableKeys.clear()
         isLoadingMore = false
         endReached = false
         page = 1
@@ -234,14 +233,24 @@ class MyFavFolderDetailFragment : Fragment(), RefreshKeyHandler {
         isLoadingMore = true
         viewLifecycleOwner.lifecycleScope.launch {
             try {
-                val res = BiliApi.favFolderResources(mediaId = mediaId, pn = page, ps = 20)
+                var targetPage = page
+                var visibleItems = emptyList<blbl.cat3399.core.model.VideoCard>()
+                var hasMore = false
+                while (true) {
+                    val res = BiliApi.favFolderResources(mediaId = mediaId, pn = targetPage, ps = 20)
+                    if (token != requestToken) return@launch
+                    hasMore = res.hasMore
+                    visibleItems = VideoCardVisibilityFilter.filterVisibleFresh(res.items, loadedStableKeys)
+                    targetPage++
+                    if (visibleItems.isNotEmpty() || !hasMore) break
+                }
                 if (token != requestToken) return@launch
-                val filtered = res.items.filter { loadedBvids.add(it.bvid) }
-                if (isRefresh) adapter.submit(filtered) else adapter.append(filtered)
+                visibleItems.forEach { loadedStableKeys.add(it.stableKey()) }
+                if (isRefresh) adapter.submit(visibleItems) else adapter.append(visibleItems)
                 maybeFocusFirstItem()
                 _binding?.recycler?.postIfAlive(isAlive = { _binding != null }) { dpadGridController?.consumePendingFocusAfterLoadMore() }
-                if (!res.hasMore || filtered.isEmpty()) endReached = true
-                page++
+                endReached = !hasMore
+                page = targetPage
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 AppLog.e("MyFavDetail", "load failed mediaId=$mediaId", t)
@@ -271,6 +280,14 @@ class MyFavFolderDetailFragment : Fragment(), RefreshKeyHandler {
         dpadGridController = null
         _binding = null
         super.onDestroyView()
+    }
+
+    private fun openDetail(position: Int) {
+        requireContext().openVideoDetailFromCards(
+            cards = adapter.snapshot(),
+            position = position,
+            source = "MyFavFolderDetail:$mediaId",
+        )
     }
 
     companion object {

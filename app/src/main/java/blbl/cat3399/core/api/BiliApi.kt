@@ -523,7 +523,21 @@ object BiliApi {
 
     suspend fun toViewList(): List<VideoCard> = VideoApi.toViewList()
 
+    suspend fun toViewAdd(
+        bvid: String? = null,
+        aid: Long? = null,
+    ) = VideoApi.toViewAdd(bvid = bvid, aid = aid)
+
+    suspend fun toViewDelete(aid: Long) = VideoApi.toViewDelete(aid = aid)
+
+    suspend fun historyDelete(kid: String) = VideoApi.historyDelete(kid = kid)
+
     suspend fun spaceLikeVideoList(vmid: Long): List<VideoCard> = VideoApi.spaceLikeVideoList(vmid = vmid)
+
+    suspend fun favResourceDelete(
+        aid: Long,
+        mediaId: Long,
+    ) = VideoApi.favResourceDeal(rid = aid, addMediaIds = emptyList(), delMediaIds = listOf(mediaId))
 
     private suspend fun favFolderInfo(mediaId: Long): FavFolder? {
         val url = BiliClient.withQuery(

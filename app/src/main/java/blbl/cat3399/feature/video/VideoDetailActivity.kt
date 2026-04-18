@@ -25,6 +25,7 @@ import blbl.cat3399.core.ui.GridSpanPolicy
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.core.ui.ThemeColor
 import blbl.cat3399.core.ui.cloneInUserScale
+import blbl.cat3399.core.ui.requestFocusAdapterPositionReliable
 import blbl.cat3399.core.ui.smoothScrollToPositionStart
 import blbl.cat3399.core.util.parseBangumiRedirectUrl
 import blbl.cat3399.core.util.Format
@@ -231,21 +232,20 @@ class VideoDetailActivity : BaseActivity() {
 
         recommendAdapter =
             VideoCardAdapter(
-                onClick = { card, _ ->
+                onClick = { card, pos ->
                     val nextBvid = card.bvid.trim()
                     if (nextBvid.isBlank()) return@VideoCardAdapter
-                    startActivity(
-                        Intent(this, VideoDetailActivity::class.java)
-                            .putExtra(EXTRA_BVID, nextBvid)
-                            .putExtra(EXTRA_TITLE, card.title)
-                            .putExtra(EXTRA_COVER_URL, card.coverUrl)
-                            .apply {
-                                card.ownerName.takeIf { it.isNotBlank() }?.let { putExtra(EXTRA_OWNER_NAME, it) }
-                                card.ownerFace?.takeIf { it.isNotBlank() }?.let { putExtra(EXTRA_OWNER_AVATAR, it) }
-                                card.ownerMid?.takeIf { it > 0L }?.let { putExtra(EXTRA_OWNER_MID, it) }
-                            },
-                    )
+                    openRecommendDetail(pos)
                 },
+                actionDelegate =
+                    VideoCardActionController(
+                        context = this,
+                        scope = lifecycleScope,
+                        dismissBehavior = VideoCardDismissBehavior.LocalNotInterested,
+                        onOpenDetail = { _, pos -> openRecommendDetail(pos) },
+                        onOpenUp = { card -> openUpDetailForCard(card) },
+                        onCardRemoved = { stableKey -> removeRecommendCardAndRestoreFocus(stableKey) },
+                    ),
             )
 
         concatAdapter =
@@ -665,6 +665,43 @@ class VideoDetailActivity : BaseActivity() {
                     ownerAvatar?.takeIf { it.isNotBlank() }?.let { putExtra(UpDetailActivity.EXTRA_AVATAR, it) }
                 },
         )
+    }
+
+    private fun openRecommendDetail(position: Int) {
+        openVideoDetailFromCards(
+            cards = recommendAdapter.snapshot(),
+            position = position,
+            source = "VideoDetail:$bvid:recommend",
+        )
+    }
+
+    private fun openUpDetailForCard(card: blbl.cat3399.core.model.VideoCard) {
+        val targetMid = card.ownerMid?.takeIf { it > 0L } ?: return
+        startActivity(
+            Intent(this, UpDetailActivity::class.java)
+                .putExtra(UpDetailActivity.EXTRA_MID, targetMid)
+                .apply {
+                    card.ownerName.takeIf { it.isNotBlank() }?.let { putExtra(UpDetailActivity.EXTRA_NAME, it) }
+                    card.ownerFace?.takeIf { it.isNotBlank() }?.let { putExtra(UpDetailActivity.EXTRA_AVATAR, it) }
+                },
+        )
+    }
+
+    private fun removeRecommendCardAndRestoreFocus(stableKey: String) {
+        val removedIndex = recommendAdapter.removeByStableKey(stableKey)
+        if (removedIndex < 0) return
+        binding.recycler.post {
+            if (recommendAdapter.itemCount <= 0) {
+                headerAdapter.requestFocusPlay()
+                return@post
+            }
+            binding.recycler.requestFocusAdapterPositionReliable(
+                position = 1 + removedIndex.coerceIn(0, recommendAdapter.itemCount - 1),
+                smoothScroll = false,
+                isAlive = { !isFinishing && !isDestroyed },
+                onFocused = {},
+            )
+        }
     }
 
     private fun onVideoTagClick(tag: VideoTag) {

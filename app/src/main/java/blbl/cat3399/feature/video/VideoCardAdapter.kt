@@ -1,6 +1,8 @@
 package blbl.cat3399.feature.video
 
+import android.view.KeyEvent
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.MarginLayoutParams
 import androidx.core.view.isVisible
@@ -9,7 +11,9 @@ import blbl.cat3399.R
 import blbl.cat3399.core.image.ImageLoader
 import blbl.cat3399.core.image.ImageUrl
 import blbl.cat3399.core.model.VideoCard
+import blbl.cat3399.core.ui.DpadItemKeyHandler
 import blbl.cat3399.core.ui.cloneInUserScale
+import blbl.cat3399.core.ui.setDpadItemKeyHandler
 import blbl.cat3399.core.util.Format
 import blbl.cat3399.databinding.ItemVideoCardBinding
 import kotlin.math.roundToInt
@@ -17,17 +21,25 @@ import kotlin.math.roundToInt
 class VideoCardAdapter(
     private val onClick: (VideoCard, Int) -> Unit,
     private val onLongClick: ((VideoCard, Int) -> Boolean)? = null,
+    private val actionDelegate: VideoCardActionDelegate? = null,
     private val fixedItemWidthDimenRes: Int? = null,
     private val fixedItemMarginDimenRes: Int? = null,
     private val stableIdKey: ((VideoCard) -> String)? = null,
     private val isSelected: ((VideoCard, Int) -> Boolean)? = null,
 ) : RecyclerView.Adapter<VideoCardAdapter.Vh>() {
     private val items = ArrayList<VideoCard>()
+    private var expandedCardStableKey: String? = null
+    private var selectedActionIndex: Int = 0
 
     private data class WatchProgressUi(
         val labelLeft: String,
         val labelRight: String?,
         val progressPermille: Int,
+    )
+
+    data class ActionOverlayUi(
+        val actions: List<VideoCardQuickAction>,
+        val selectedIndex: Int,
     )
 
     init {
@@ -42,6 +54,10 @@ class VideoCardAdapter(
     fun submit(list: List<VideoCard>) {
         items.clear()
         items.addAll(list)
+        if (expandedCardStableKey != null && items.none { stableKeyFor(it) == expandedCardStableKey }) {
+            expandedCardStableKey = null
+            selectedActionIndex = 0
+        }
         notifyDataSetChanged()
     }
 
@@ -54,9 +70,25 @@ class VideoCardAdapter(
 
     fun snapshot(): List<VideoCard> = items.toList()
 
+    fun removeByStableKey(stableKey: String): Int {
+        val index = items.indexOfFirst { stableKeyFor(it) == stableKey }
+        if (index < 0) return -1
+        val removedKey = stableKeyFor(items[index])
+        items.removeAt(index)
+        if (expandedCardStableKey == removedKey) {
+            expandedCardStableKey = null
+            selectedActionIndex = 0
+        }
+        notifyItemRemoved(index)
+        if (index < items.size) {
+            notifyItemRangeChanged(index, items.size - index)
+        }
+        return index
+    }
+
     override fun getItemId(position: Int): Long {
         val item = items[position]
-        val key = stableIdKey?.invoke(item) ?: item.stableKey()
+        val key = stableKeyFor(item)
         return key.hashCode().toLong()
     }
 
@@ -67,17 +99,186 @@ class VideoCardAdapter(
                 parent,
                 false,
             )
-        return Vh(binding, fixedItemWidthDimenRes, fixedItemMarginDimenRes)
+        return Vh(
+            binding = binding,
+            fixedItemWidthDimenRes = fixedItemWidthDimenRes,
+            fixedItemMarginDimenRes = fixedItemMarginDimenRes,
+            onItemClick = ::handleItemClick,
+            onItemLongClick = ::handleItemLongClick,
+            onOverlayActionClick = ::handleOverlayActionClick,
+            onItemFocusLost = ::handleItemFocusLost,
+            onOverlayActionSelect = ::updateSelectedActionIndex,
+            isOverlayExpanded = ::isOverlayExpanded,
+        )
     }
 
-    override fun onBindViewHolder(holder: Vh, position: Int) = holder.bind(items[position], position, onClick, onLongClick, isSelected)
+    override fun onBindViewHolder(holder: Vh, position: Int) {
+        val item = items[position]
+        val overlayUi =
+            if (isOverlayExpanded(item)) {
+                val actions = actionDelegate?.manualActions(item, position).orEmpty().take(ACTION_BUTTON_COUNT)
+                if (actions.size == ACTION_BUTTON_COUNT) {
+                    ActionOverlayUi(
+                        actions = actions,
+                        selectedIndex = selectedActionIndex.coerceIn(0, actions.lastIndex),
+                    )
+                } else {
+                    null
+                }
+            } else {
+                null
+            }
+        holder.bind(
+            item = item,
+            position = position,
+            isSelected = isSelected,
+            overlayUi = overlayUi,
+            actionDelegate = actionDelegate,
+        )
+    }
 
     override fun getItemCount(): Int = items.size
+
+    private fun stableKeyFor(item: VideoCard): String = stableIdKey?.invoke(item) ?: item.stableKey()
+
+    private fun isOverlayExpanded(item: VideoCard): Boolean = expandedCardStableKey == stableKeyFor(item)
+
+    private fun handleItemClick(
+        item: VideoCard,
+        position: Int,
+        isRootFocused: Boolean,
+    ) {
+        val overlayUi = currentOverlayUi(item = item, position = position)
+        if (overlayUi == null) {
+            onClick(item, position)
+            return
+        }
+
+        if (isRootFocused) {
+            val action = overlayUi.actions.getOrNull(overlayUi.selectedIndex) ?: return
+            collapseExpandedOverlay()
+            actionDelegate?.onActionSelected(item, position, action)
+        } else {
+            collapseExpandedOverlay()
+        }
+    }
+
+    private fun handleItemLongClick(
+        item: VideoCard,
+        position: Int,
+    ): Boolean {
+        val delegate = actionDelegate ?: return onLongClick?.invoke(item, position) ?: false
+        return when (delegate.resolveLongPressAction(item, position)) {
+            VideoCardConfiguredLongPressAction.MANUAL -> toggleOverlay(item)
+            VideoCardConfiguredLongPressAction.WATCH_LATER -> {
+                delegate.manualActions(item, position)
+                    .firstOrNull { it.id == VideoCardQuickActionId.WATCH_LATER }
+                    ?.let { delegate.onActionSelected(item, position, it) }
+                true
+            }
+
+            VideoCardConfiguredLongPressAction.OPEN_DETAIL -> {
+                delegate.manualActions(item, position)
+                    .firstOrNull { it.id == VideoCardQuickActionId.OPEN_DETAIL }
+                    ?.let { delegate.onActionSelected(item, position, it) }
+                true
+            }
+
+            VideoCardConfiguredLongPressAction.OPEN_UP -> {
+                delegate.manualActions(item, position)
+                    .firstOrNull { it.id == VideoCardQuickActionId.OPEN_UP }
+                    ?.let { delegate.onActionSelected(item, position, it) }
+                true
+            }
+
+            VideoCardConfiguredLongPressAction.DISMISS -> {
+                delegate.manualActions(item, position)
+                    .firstOrNull { it.id == VideoCardQuickActionId.DISMISS }
+                    ?.let { delegate.onActionSelected(item, position, it) }
+                true
+            }
+        }
+    }
+
+    private fun handleOverlayActionClick(
+        item: VideoCard,
+        position: Int,
+        actionIndex: Int,
+    ) {
+        val overlayUi = currentOverlayUi(item = item, position = position) ?: return
+        val action = overlayUi.actions.getOrNull(actionIndex) ?: return
+        updateSelectedActionIndex(actionIndex)
+        collapseExpandedOverlay()
+        actionDelegate?.onActionSelected(item, position, action)
+    }
+
+    private fun handleItemFocusLost(item: VideoCard) {
+        if (!isOverlayExpanded(item)) return
+        collapseExpandedOverlay()
+    }
+
+    private fun updateSelectedActionIndex(index: Int) {
+        val expandedKey = expandedCardStableKey ?: return
+        val targetIndex = index.coerceIn(0, ACTION_BUTTON_COUNT - 1)
+        if (selectedActionIndex == targetIndex) return
+        selectedActionIndex = targetIndex
+        notifyExpandedKeyChanged(expandedKey)
+    }
+
+    private fun toggleOverlay(item: VideoCard): Boolean {
+        val key = stableKeyFor(item)
+        if (expandedCardStableKey == key) {
+            collapseExpandedOverlay()
+            return true
+        }
+
+        val previousKey = expandedCardStableKey
+        expandedCardStableKey = key
+        selectedActionIndex = 0
+        previousKey?.let(::notifyExpandedKeyChanged)
+        notifyExpandedKeyChanged(key)
+        return true
+    }
+
+    private fun collapseExpandedOverlay() {
+        val key = expandedCardStableKey ?: return
+        expandedCardStableKey = null
+        selectedActionIndex = 0
+        notifyExpandedKeyChanged(key)
+    }
+
+    private fun notifyExpandedKeyChanged(stableKey: String) {
+        val index = items.indexOfFirst { stableKeyFor(it) == stableKey }
+        if (index >= 0) notifyItemChanged(index)
+    }
+
+    private fun currentOverlayUi(
+        item: VideoCard,
+        position: Int,
+    ): ActionOverlayUi? {
+        if (!isOverlayExpanded(item)) return null
+        val actions = actionDelegate?.manualActions(item, position).orEmpty().take(ACTION_BUTTON_COUNT)
+        if (actions.size != ACTION_BUTTON_COUNT) return null
+        return ActionOverlayUi(
+            actions = actions,
+            selectedIndex = selectedActionIndex.coerceIn(0, actions.lastIndex),
+        )
+    }
+
+    companion object {
+        private const val ACTION_BUTTON_COUNT = 4
+    }
 
     class Vh(
         private val binding: ItemVideoCardBinding,
         private val fixedItemWidthDimenRes: Int?,
         private val fixedItemMarginDimenRes: Int?,
+        private val onItemClick: (VideoCard, Int, Boolean) -> Unit,
+        private val onItemLongClick: (VideoCard, Int) -> Boolean,
+        private val onOverlayActionClick: (VideoCard, Int, Int) -> Unit,
+        private val onItemFocusLost: (VideoCard) -> Unit,
+        private val onOverlayActionSelect: (Int) -> Unit,
+        private val isOverlayExpanded: (VideoCard) -> Boolean,
     ) : RecyclerView.ViewHolder(binding.root) {
         init {
             applyFixedSizing()
@@ -86,9 +287,9 @@ class VideoCardAdapter(
         fun bind(
             item: VideoCard,
             position: Int,
-            onClick: (VideoCard, Int) -> Unit,
-            onLongClick: ((VideoCard, Int) -> Boolean)?,
             isSelected: ((VideoCard, Int) -> Boolean)?,
+            overlayUi: ActionOverlayUi?,
+            actionDelegate: VideoCardActionDelegate?,
         ) {
             applyFixedSizing()
 
@@ -147,16 +348,27 @@ class VideoCardAdapter(
             ImageLoader.loadInto(binding.ivCover, ImageUrl.cover(item.coverUrl))
 
             applyOverlayTranslations()
+            bindActionOverlay(
+                item = item,
+                position = position,
+                overlayUi = overlayUi,
+                actionDelegate = actionDelegate,
+            )
 
             binding.root.setOnClickListener {
                 val pos = bindingAdapterPosition.takeIf { it != RecyclerView.NO_POSITION } ?: return@setOnClickListener
-                onClick(item, pos)
+                onItemClick(item, pos, binding.root.isFocused)
             }
 
             binding.root.setOnLongClickListener {
                 val pos = bindingAdapterPosition.takeIf { it != RecyclerView.NO_POSITION } ?: return@setOnLongClickListener false
-                onLongClick?.invoke(item, pos) ?: false
+                onItemLongClick(item, pos)
             }
+
+            binding.root.onFocusChangeListener =
+                View.OnFocusChangeListener { _, hasFocus ->
+                    if (!hasFocus) onItemFocusLost(item)
+                }
         }
 
         private fun applyFixedSizing() {
@@ -222,6 +434,118 @@ class VideoCardAdapter(
             } else {
                 binding.root.post { applyShiftY() }
             }
+        }
+
+        private fun bindActionOverlay(
+            item: VideoCard,
+            position: Int,
+            overlayUi: ActionOverlayUi?,
+            actionDelegate: VideoCardActionDelegate?,
+        ) {
+            val isExpanded = overlayUi != null
+            binding.vActionScrim.isVisible = isExpanded
+            binding.llActions.isVisible = isExpanded
+            if (isExpanded) {
+                binding.llStats.isVisible = false
+                binding.tvDuration.isVisible = false
+                binding.tvProgressLeft.isVisible = false
+                binding.tvProgressTime.isVisible = false
+                binding.progressWatch.isVisible = false
+                binding.tvCoverLeftBottom.isVisible = false
+            }
+
+            val actionButtons =
+                listOf(
+                    binding.btnActionWatchLater,
+                    binding.btnActionDetail,
+                    binding.btnActionUp,
+                    binding.btnActionDismiss,
+                )
+            val actionIcons =
+                listOf(
+                    binding.ivActionWatchLater,
+                    binding.ivActionDetail,
+                    binding.ivActionUp,
+                    binding.ivActionDismiss,
+                )
+
+            if (overlayUi == null) {
+                actionButtons.forEach { it.isSelected = false }
+                binding.ivActionDismiss.contentDescription = binding.root.context.getString(R.string.video_card_action_not_interested)
+                binding.root.setDpadItemKeyHandler(null)
+                return
+            }
+
+            overlayUi.actions.forEachIndexed { index, action ->
+                actionButtons[index].isSelected = overlayUi.selectedIndex == index
+                actionIcons[index].setImageResource(action.iconResId)
+                actionIcons[index].contentDescription = action.contentDescription
+                actionButtons[index].setOnClickListener {
+                    val pos = bindingAdapterPosition.takeIf { it != RecyclerView.NO_POSITION } ?: return@setOnClickListener
+                    onOverlayActionClick(item, pos, index)
+                }
+            }
+            actionButtons.forEachIndexed { index, button ->
+                button.isSelected = overlayUi.selectedIndex == index
+            }
+
+            binding.root.setDpadItemKeyHandler(
+                if (actionDelegate == null) {
+                    null
+                } else {
+                    DpadItemKeyHandler { _, keyCode, event ->
+                        if (!isOverlayExpanded(item)) return@DpadItemKeyHandler false
+                        when (keyCode) {
+                            KeyEvent.KEYCODE_BACK,
+                            KeyEvent.KEYCODE_ESCAPE,
+                            KeyEvent.KEYCODE_BUTTON_B,
+                            ->
+                                if (event.action == KeyEvent.ACTION_DOWN) {
+                                    onItemFocusLost(item)
+                                    true
+                                } else {
+                                    false
+                                }
+
+                            KeyEvent.KEYCODE_DPAD_LEFT ->
+                                if (event.action == KeyEvent.ACTION_DOWN) {
+                                    val next = (overlayUi.selectedIndex - 1).coerceAtLeast(0)
+                                    onOverlayActionSelect(next)
+                                    true
+                                } else {
+                                    false
+                                }
+
+                            KeyEvent.KEYCODE_DPAD_RIGHT ->
+                                if (event.action == KeyEvent.ACTION_DOWN) {
+                                    val next = (overlayUi.selectedIndex + 1).coerceAtMost(overlayUi.actions.lastIndex)
+                                    onOverlayActionSelect(next)
+                                    true
+                                } else {
+                                    false
+                                }
+
+                            KeyEvent.KEYCODE_DPAD_UP,
+                            KeyEvent.KEYCODE_DPAD_DOWN,
+                            ->
+                                if (event.action == KeyEvent.ACTION_DOWN) {
+                                    onItemFocusLost(item)
+                                    false
+                                } else {
+                                    false
+                                }
+
+                            KeyEvent.KEYCODE_DPAD_CENTER,
+                            KeyEvent.KEYCODE_ENTER,
+                            KeyEvent.KEYCODE_NUMPAD_ENTER,
+                            ->
+                                event.repeatCount > 0
+
+                            else -> false
+                        }
+                    }
+                },
+            )
         }
 
         private fun buildWatchProgressUi(item: VideoCard): WatchProgressUi? {

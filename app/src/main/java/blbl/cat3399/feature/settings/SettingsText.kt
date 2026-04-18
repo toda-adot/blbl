@@ -102,6 +102,15 @@ object SettingsText {
             else -> "回到当前所属Tab"
         }
 
+    fun videoCardLongPressActionText(prefValue: String): String =
+        when (prefValue) {
+            blbl.cat3399.core.prefs.AppPrefs.VIDEO_CARD_LONG_PRESS_ACTION_WATCH_LATER -> "添加到稍后再看"
+            blbl.cat3399.core.prefs.AppPrefs.VIDEO_CARD_LONG_PRESS_ACTION_OPEN_DETAIL -> "进入详情页"
+            blbl.cat3399.core.prefs.AppPrefs.VIDEO_CARD_LONG_PRESS_ACTION_OPEN_UP -> "进入UP主页"
+            blbl.cat3399.core.prefs.AppPrefs.VIDEO_CARD_LONG_PRESS_ACTION_DISMISS -> "不感兴趣"
+            else -> "手动选择"
+        }
+
     fun themePresetText(prefValue: String): String =
         when (prefValue) {
             blbl.cat3399.core.prefs.AppPrefs.THEME_PRESET_TV_PINK -> "小电视粉"

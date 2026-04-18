@@ -32,6 +32,7 @@ import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.core.ui.TabContentSwitchFocusHost
 import blbl.cat3399.core.ui.cloneInUserScale
+import blbl.cat3399.core.ui.dispatchToAncestorDpadItemKeyHandler
 import blbl.cat3399.core.ui.popup.AppPopup
 import blbl.cat3399.core.ui.popup.PopupHandle
 import blbl.cat3399.databinding.ActivityMainBinding
@@ -358,6 +359,9 @@ class MainActivity : BaseActivity(), SidebarFocusHost {
                 KeyEvent.KEYCODE_DPAD_LEFT -> {
                     if (focused != null && isInMainContainer(focused)) {
                         if (tryMoveDynamicVideoToFollowing(focused)) return true
+                        if (focused.dispatchToAncestorDpadItemKeyHandler(event.keyCode, event)) {
+                            return true
+                        }
                         // If the current view can move LEFT within the main container (e.g. SearchFragment
                         // history/hot lists), don't steal the key event to enter the sidebar.
                         val next = focused.focusSearch(View.FOCUS_LEFT)
