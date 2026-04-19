@@ -19,6 +19,13 @@ import java.util.zip.CRC32
 
 internal object VideoApi {
     private const val TAG = "BiliApi"
+    private const val FEEDBACK_DISLIKE_URL = "https://api.bilibili.com/x/web-interface/feedback/dislike"
+    private const val FEEDBACK_DISLIKE_APP_ID = "100"
+    private const val FEEDBACK_DISLIKE_PLATFORM = "5"
+    private const val FEEDBACK_DISLIKE_SPMID = "333.1007.0.0"
+    private const val FEEDBACK_DISLIKE_GOTO = "av"
+    private const val FEEDBACK_DISLIKE_PAGE = "1"
+    private const val FEEDBACK_DISLIKE_DEFAULT_REASON_ID = 1
 
     private const val DM_FILTER_USER_CACHE_TTL_MS: Long = 10L * 60 * 1000 // 10min
     private val MID_HASH_REGEX = Regex("^[0-9a-fA-F]{1,8}$")
@@ -28,6 +35,13 @@ internal object VideoApi {
         val mid: Long,
         val fetchedAtMs: Long,
         val filter: DanmakuUserFilter,
+    )
+
+    private data class FeedbackDislikePayload(
+        val aid: Long,
+        val ownerMid: Long,
+        val trackId: String?,
+        val reasonId: Int,
     )
 
     @Volatile
@@ -148,6 +162,41 @@ internal object VideoApi {
                         "csrf" to csrf,
                     ),
                 headers = BiliApi.piliWebHeaders(targetUrl = url, includeCookie = true),
+                noCookies = true,
+            )
+        val code = json.optInt("code", 0)
+        if (code != 0) {
+            val msg = json.optString("message", json.optString("msg", ""))
+            throw BiliApiException(apiCode = code, apiMessage = msg)
+        }
+    }
+
+    suspend fun feedbackDislike(card: VideoCard) {
+        val csrf = BiliClient.cookies.getCookieValue("bili_jct").orEmpty().trim()
+        if (csrf.isBlank()) throw BiliApiException(apiCode = -111, apiMessage = "missing_csrf")
+
+        val payload = resolveFeedbackDislikePayload(card)
+        val keys = BiliClient.ensureWbiKeys()
+        val url = BiliClient.signedWbiUrlAbsolute(FEEDBACK_DISLIKE_URL, emptyMap(), keys)
+        val form =
+            linkedMapOf(
+                "app_id" to FEEDBACK_DISLIKE_APP_ID,
+                "platform" to FEEDBACK_DISLIKE_PLATFORM,
+                "from_spmid" to "",
+                "spmid" to FEEDBACK_DISLIKE_SPMID,
+                "goto" to FEEDBACK_DISLIKE_GOTO,
+                "id" to payload.aid.toString(),
+                "mid" to payload.ownerMid.toString(),
+                "track_id" to payload.trackId.orEmpty(),
+                "feedback_page" to FEEDBACK_DISLIKE_PAGE,
+                "reason_id" to payload.reasonId.toString(),
+                "csrf" to csrf,
+            )
+        val json =
+            BiliClient.postFormJson(
+                url,
+                form = form,
+                headers = webFeedbackHeaders(targetUrl = FEEDBACK_DISLIKE_URL),
                 noCookies = true,
             )
         val code = json.optInt("code", 0)
@@ -1445,6 +1494,7 @@ internal object VideoApi {
             pubDateText = null,
             progressSec = rawProgressSec.takeIf { it > 0 && !progressFinished },
             progressFinished = progressFinished,
+            trackId = obj.optString("track_id", obj.optString("trackid", "")).trim().takeIf { it.isNotBlank() },
         )
     }
 
@@ -1455,6 +1505,48 @@ internal object VideoApi {
             parseVideoCard(OrgJsonObj(obj))?.let { out.add(it) }
         }
         return out
+    }
+
+    private fun webFeedbackHeaders(targetUrl: String): Map<String, String> {
+        return buildMap {
+            put("Referer", "https://www.bilibili.com/")
+            val cookie = BiliClient.cookies.cookieHeaderFor(targetUrl).orEmpty().trim()
+            if (cookie.isNotBlank()) put("Cookie", cookie)
+        }
+    }
+
+    private suspend fun resolveFeedbackDislikePayload(card: VideoCard): FeedbackDislikePayload {
+        var aid = card.aid?.takeIf { it > 0L }
+        var ownerMid = card.ownerMid?.takeIf { it > 0L }
+        if (aid != null && ownerMid != null) {
+            return FeedbackDislikePayload(
+                aid = aid,
+                ownerMid = ownerMid,
+                trackId = card.trackId,
+                reasonId = FEEDBACK_DISLIKE_DEFAULT_REASON_ID,
+            )
+        }
+
+        val bvid = card.bvid.trim().takeIf { it.isNotBlank() } ?: throw BiliApiException(apiCode = -400, apiMessage = "missing_video_id")
+        val json = BiliApi.view(bvid)
+        val code = json.optInt("code", 0)
+        if (code != 0) {
+            val msg = json.optString("message", json.optString("msg", ""))
+            throw BiliApiException(apiCode = code, apiMessage = msg)
+        }
+        val data = json.optJSONObject("data") ?: JSONObject()
+        if (aid == null) {
+            aid = data.optLong("aid").takeIf { it > 0L }
+        }
+        if (ownerMid == null) {
+            ownerMid = data.optJSONObject("owner")?.optLong("mid")?.takeIf { it > 0L }
+        }
+        return FeedbackDislikePayload(
+            aid = aid ?: throw BiliApiException(apiCode = -400, apiMessage = "missing_video_id"),
+            ownerMid = ownerMid ?: throw BiliApiException(apiCode = -400, apiMessage = "missing_video_owner"),
+            trackId = card.trackId,
+            reasonId = FEEDBACK_DISLIKE_DEFAULT_REASON_ID,
+        )
     }
 
     private suspend fun requestPlayUrl(

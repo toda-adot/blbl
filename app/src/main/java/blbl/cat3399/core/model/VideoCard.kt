@@ -28,6 +28,8 @@ data class VideoCard(
     val progressSec: Long? = null,
     // True when the listing API marks this item as fully watched.
     val progressFinished: Boolean = false,
+    // Optional recommendation/search routing id used by web feedback/report flows.
+    val trackId: String? = null,
 ) {
     fun stableKey(): String =
         when {

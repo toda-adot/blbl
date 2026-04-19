@@ -4,6 +4,7 @@ import android.content.Context
 import blbl.cat3399.R
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.api.BiliApiException
+import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.model.VideoCard
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.AppToast
@@ -12,32 +13,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-data class VideoCardNotInterestedContext(
-    val card: VideoCard,
-    val stableKey: String,
-    val bvid: String?,
-    val aid: Long?,
-    val ownerMid: Long?,
-)
-
-fun VideoCard.toNotInterestedContext(): VideoCardNotInterestedContext =
-    VideoCardNotInterestedContext(
-        card = this,
-        stableKey = stableKey(),
-        bvid = bvid.trim().takeIf { it.isNotBlank() },
-        aid = aid?.takeIf { it > 0L },
-        ownerMid = ownerMid?.takeIf { it > 0L },
-    )
-
-fun interface VideoCardNotInterestedReporter {
-    suspend fun report(context: VideoCardNotInterestedContext)
-}
-
-object NoOpVideoCardNotInterestedReporter : VideoCardNotInterestedReporter {
-    // Hook point for the future Bilibili "not interested" reporter.
-    override suspend fun report(context: VideoCardNotInterestedContext) = Unit
-}
 
 sealed interface VideoCardDismissBehavior {
     data object LocalNotInterested : VideoCardDismissBehavior
@@ -58,7 +33,6 @@ class VideoCardActionController(
     private val onOpenDetail: (VideoCard, Int) -> Unit,
     private val onOpenUp: (VideoCard) -> Unit,
     private val onCardRemoved: (String) -> Unit = {},
-    private val notInterestedReporter: VideoCardNotInterestedReporter = NoOpVideoCardNotInterestedReporter,
     private val longPressActionProvider: () -> String = { BiliClient.prefs.videoCardLongPressAction },
 ) : VideoCardActionDelegate {
     private val inFlightActionKeys = HashSet<String>()
@@ -138,16 +112,19 @@ class VideoCardActionController(
                 val actionKey = buildActionKey(card = card, suffix = "not_interested")
                 if (!markInFlight(actionKey)) return
 
+                val stableKey = card.stableKey()
+                VideoCardVisibilityFilter.hide(stableKey)
+                onCardRemoved(stableKey)
+                AppToast.show(context, context.getString(R.string.video_card_action_not_interested_done))
+
                 scope.launch {
                     try {
                         withContext(Dispatchers.IO) {
-                            notInterestedReporter.report(card.toNotInterestedContext())
+                            BiliApi.videoFeedbackDislike(card)
                         }
-                        onCardRemoved(card.stableKey())
-                        AppToast.show(context, context.getString(R.string.video_card_action_not_interested_done))
                     } catch (t: Throwable) {
                         if (t is CancellationException) throw t
-                        AppToast.show(context, errorMessage(t))
+                        AppLog.w("VideoCardAction", "report not interested failed stableKey=$stableKey", t)
                     } finally {
                         clearInFlight(actionKey)
                     }

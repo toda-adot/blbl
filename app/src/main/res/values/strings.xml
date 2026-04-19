@@ -42,7 +42,7 @@
     <string name="video_card_action_delete">删除</string>
     <string name="video_card_action_watch_later_done">已添加到稍后再看</string>
     <string name="video_card_action_delete_done">已删除</string>
-    <string name="video_card_action_not_interested_done">将减少此视频展示</string>
+    <string name="video_card_action_not_interested_done">将减少此类视频展示</string>
     <string name="video_card_action_open_detail_unsupported">当前卡片暂不支持进入详情页</string>
     <string name="video_card_action_missing_video_id">未获取到视频信息</string>
     <string name="video_card_action_failed">操作失败</string>

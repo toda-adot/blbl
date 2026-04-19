@@ -532,6 +532,8 @@ object BiliApi {
 
     suspend fun historyDelete(kid: String) = VideoApi.historyDelete(kid = kid)
 
+    suspend fun videoFeedbackDislike(card: VideoCard) = VideoApi.feedbackDislike(card = card)
+
     suspend fun spaceLikeVideoList(vmid: Long): List<VideoCard> = VideoApi.spaceLikeVideoList(vmid = vmid)
 
     suspend fun favResourceDelete(
@@ -1503,6 +1505,7 @@ object BiliApi {
                     pubDate = created,
                     pubDateText = null,
                     isChargingArc = isChargingArc,
+                    trackId = obj.optString("track_id", obj.optString("trackid", "")).trim().takeIf { it.isNotBlank() },
                 ),
             )
         }
@@ -1645,6 +1648,7 @@ object BiliApi {
         val cards = ArrayList<VideoCard>()
         for (i in 0 until items.length()) {
             val it = items.optJSONObject(i) ?: continue
+            val trackId = it.optString("track_id", it.optString("trackid", "")).trim().takeIf { value -> value.isNotBlank() }
             val modules = it.optJSONObject("modules") ?: continue
             val moduleDynamic = modules.optJSONObject("module_dynamic") ?: continue
             val major = moduleDynamic.optJSONObject("major") ?: continue
@@ -1660,6 +1664,9 @@ object BiliApi {
                 val bvid = archive.optString("bvid", "")
                 if (bvid.isBlank()) continue
                 val stat = archive.optJSONObject("stat") ?: JSONObject()
+                val aid =
+                    archive.optLong("aid").takeIf { v -> v > 0 }
+                        ?: archive.optLong("avid").takeIf { v -> v > 0 }
                 val isChargingArc =
                     isChargingArc(
                         isChargingArc = archive.optBoolean("is_charging_arc", false),
@@ -1671,6 +1678,7 @@ object BiliApi {
                     VideoCard(
                         bvid = bvid,
                         cid = null,
+                        aid = aid,
                         title = archive.optString("title", ""),
                         coverUrl = archive.optString("cover", ""),
                         durationSec = parseDuration(archive.optString("duration_text", "0:00")),
@@ -1682,6 +1690,7 @@ object BiliApi {
                         pubDate = pubDate,
                         pubDateText = null,
                         isChargingArc = isChargingArc,
+                        trackId = trackId,
                     ),
                 )
                 continue
@@ -1707,6 +1716,7 @@ object BiliApi {
                     VideoCard(
                         bvid = bvid,
                         cid = null,
+                        aid = aid,
                         title = ugcSeason.optString("title", ""),
                         coverUrl = ugcSeason.optString("cover", ""),
                         durationSec = parseDuration(ugcSeason.optString("duration_text", "0:00")),
@@ -1718,6 +1728,7 @@ object BiliApi {
                         pubDate = authorPubTs,
                         pubDateText = null,
                         isChargingArc = isChargingArc,
+                        trackId = trackId,
                     ),
                 )
                 continue
@@ -1743,6 +1754,7 @@ object BiliApi {
                     VideoCard(
                         bvid = bvid,
                         cid = null,
+                        aid = aid,
                         title = additionalUgc.optString("title", ""),
                         coverUrl = additionalUgc.optString("cover", ""),
                         durationSec = parseDuration(additionalUgc.optString("duration", "0:00")),
@@ -1754,6 +1766,7 @@ object BiliApi {
                         pubDate = authorPubTs,
                         pubDateText = null,
                         isChargingArc = isChargingArc,
+                        trackId = trackId,
                     ),
                 )
             }
