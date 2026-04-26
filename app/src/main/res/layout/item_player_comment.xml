@@ -7,7 +7,7 @@
     android:clickable="true"
     android:focusable="true"
     android:stateListAnimator="@animator/blbl_focus_scale"
-    app:cardBackgroundColor="?attr/colorSurface"
+    app:cardBackgroundColor="@android:color/black"
     app:cardCornerRadius="@dimen/player_comment_item_corner_radius"
     app:strokeColor="?attr/blblFocusStrokeColor"
     app:strokeWidth="@dimen/player_comment_item_stroke_width">

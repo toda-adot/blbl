@@ -40,14 +40,14 @@
     <dimen name="video_card_subtitle_text_size">14sp</dimen>
     <dimen name="video_card_progress_bar_height">2.5dp</dimen>
     <dimen name="video_card_progress_bar_radius">1.2dp</dimen>
-    <dimen name="video_card_action_button_height">50dp</dimen>
-    <dimen name="video_card_action_group_margin_h">10dp</dimen>
-    <dimen name="video_card_action_gap">8dp</dimen>
-    <dimen name="video_card_action_icon_watch_later_size">30dp</dimen>
-    <dimen name="video_card_action_icon_detail_size">25dp</dimen>
-    <dimen name="video_card_action_icon_up_size">23dp</dimen>
-    <dimen name="video_card_action_icon_dismiss_size">24dp</dimen>
-    <dimen name="video_card_action_button_radius">14dp</dimen>
+    <dimen name="video_card_action_button_height">56dp</dimen>
+    <dimen name="video_card_action_group_margin_h">8dp</dimen>
+    <dimen name="video_card_action_gap">7dp</dimen>
+    <dimen name="video_card_action_icon_watch_later_size">34dp</dimen>
+    <dimen name="video_card_action_icon_detail_size">31dp</dimen>
+    <dimen name="video_card_action_icon_up_size">29dp</dimen>
+    <dimen name="video_card_action_icon_dismiss_size">30dp</dimen>
+    <dimen name="video_card_action_button_radius">16dp</dimen>
 
     <!-- Player: bottom recommend panel -->
     <dimen name="player_recommend_card_width">260dp</dimen>

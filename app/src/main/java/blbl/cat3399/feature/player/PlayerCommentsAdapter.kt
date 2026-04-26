@@ -142,12 +142,7 @@ class PlayerCommentsAdapter(
             boundRpid = item.rpid
             val ctx = binding.root.context
             val previewUserColor = ContextCompat.getColor(ctx, R.color.blbl_blue)
-            binding.root.setCardBackgroundColor(
-                ContextCompat.getColor(
-                    ctx,
-                    if (item.isThreadRoot) R.color.player_comment_thread_root_bg else R.color.blbl_surface,
-                ),
-            )
+            binding.root.setCardBackgroundColor(ContextCompat.getColor(ctx, android.R.color.black))
 
             binding.tvContextTag.text = item.contextTag.orEmpty()
             binding.tvContextTag.visibility = if (item.contextTag.isNullOrBlank()) View.GONE else View.VISIBLE
