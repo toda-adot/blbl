@@ -51,23 +51,10 @@ class AppPrefs(context: Context) {
 
     var themePreset: String
         get() {
-            val raw = prefs.getString(KEY_THEME_PRESET, THEME_PRESET_DEFAULT) ?: THEME_PRESET_DEFAULT
-            val v = raw.trim()
-            return when (v) {
-                THEME_PRESET_DEFAULT,
-                THEME_PRESET_TV_PINK,
-                -> v
-                else -> THEME_PRESET_DEFAULT
-            }
+            return normalizeThemePreset(prefs.getString(KEY_THEME_PRESET, THEME_PRESET_DEFAULT))
         }
         set(value) {
-            val v = value.trim()
-            val normalized =
-                when (v) {
-                    THEME_PRESET_TV_PINK -> THEME_PRESET_TV_PINK
-                    else -> THEME_PRESET_DEFAULT
-                }
-            prefs.edit().putString(KEY_THEME_PRESET, normalized).apply()
+            prefs.edit().putString(KEY_THEME_PRESET, normalizeThemePreset(value)).apply()
         }
 
     var startupPage: String
@@ -893,6 +880,7 @@ class AppPrefs(context: Context) {
 
         const val THEME_PRESET_DEFAULT = "default"
         const val THEME_PRESET_TV_PINK = "tv_pink"
+        const val THEME_PRESET_TV_PINK_ILLUSTRATION = "tv_pink_illustration"
 
         const val FOLLOWING_LIST_ORDER_FOLLOW_TIME = "follow_time"
         const val FOLLOWING_LIST_ORDER_RECENT_VISIT = "recent_visit"
@@ -1194,6 +1182,14 @@ class AppPrefs(context: Context) {
             val url = value.toHttpUrlOrNull() ?: return null
             if (url.query != null || url.fragment != null) return null
             return url.toString().trimEnd('/')
+        }
+
+        fun normalizeThemePreset(value: String?): String {
+            return when (value?.trim()) {
+                THEME_PRESET_TV_PINK -> THEME_PRESET_TV_PINK
+                THEME_PRESET_TV_PINK_ILLUSTRATION -> THEME_PRESET_TV_PINK_ILLUSTRATION
+                else -> THEME_PRESET_DEFAULT
+            }
         }
     }
 

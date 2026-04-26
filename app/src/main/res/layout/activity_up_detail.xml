@@ -3,19 +3,19 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="?attr/colorBackground">
+    android:background="?attr/blblPageBackdrop">
 
     <com.google.android.material.appbar.AppBarLayout
         android:id="@+id/app_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="?attr/colorBackground">
+        android:background="@android:color/transparent">
 
         <com.google.android.material.appbar.CollapsingToolbarLayout
             android:id="@+id/collapsing_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="?attr/colorBackground"
+            android:background="@android:color/transparent"
             android:minHeight="54dp"
             app:layout_scrollFlags="scroll|exitUntilCollapsed">
 
@@ -23,7 +23,7 @@
                 android:id="@+id/header_container"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:background="?attr/colorBackground"
+                android:background="@android:color/transparent"
                 android:minHeight="0dp"
                 android:paddingTop="54dp">
 
@@ -198,7 +198,7 @@
                 android:id="@+id/top_bar"
                 android:layout_width="match_parent"
                 android:layout_height="54dp"
-                android:background="?attr/colorBackground"
+                android:background="@android:color/transparent"
                 app:layout_collapseMode="pin">
 
                 <ImageButton
@@ -226,7 +226,7 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="12dp"
             android:layout_marginEnd="12dp"
-            android:background="?attr/colorBackground"
+            android:background="@android:color/transparent"
             android:focusable="false"
             app:tabBackground="?attr/blblFocusBgRound"
             app:tabIndicatorColor="?attr/blblAccent"
@@ -240,7 +240,7 @@
         android:id="@+id/swipe_refresh"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="?attr/colorBackground"
+        android:background="@android:color/transparent"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
         <androidx.recyclerview.widget.RecyclerView
