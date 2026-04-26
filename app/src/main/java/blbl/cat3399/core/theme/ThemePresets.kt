@@ -43,7 +43,7 @@ object ThemePresets {
             AppPrefs.THEME_PRESET_TV_PINK_ILLUSTRATION ->
                 Spec(
                     baseThemeRes = R.style.Theme_Blbl_Base_TvPinkIllustration,
-                    overlayRes = R.style.ThemeOverlay_Blbl_Accent_TvPink,
+                    overlayRes = R.style.ThemeOverlay_Blbl_Accent_Classic,
                 )
 
             else ->

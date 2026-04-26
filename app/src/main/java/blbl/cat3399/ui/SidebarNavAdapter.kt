@@ -105,7 +105,7 @@ class SidebarNavAdapter(
                 if (selected) {
                     ThemeColor.resolve(ctx, R.attr.blblAccent, R.color.blbl_purple)
                 } else {
-                    ThemeColor.resolve(ctx, android.R.attr.textColorSecondary, R.color.blbl_text_secondary)
+                    ThemeColor.resolve(ctx, R.attr.blblOnPageBackdropSecondary, R.color.blbl_text_secondary)
                 }
             binding.ivIcon.imageTintList = ColorStateList.valueOf(iconTint)
 

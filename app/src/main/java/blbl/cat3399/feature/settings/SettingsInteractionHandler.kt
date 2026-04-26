@@ -747,7 +747,7 @@ class SettingsInteractionHandler(
                     listOf(
                         blbl.cat3399.core.prefs.AppPrefs.THEME_PRESET_DEFAULT to "默认",
                         blbl.cat3399.core.prefs.AppPrefs.THEME_PRESET_TV_PINK to "小电视粉",
-                        blbl.cat3399.core.prefs.AppPrefs.THEME_PRESET_TV_PINK_ILLUSTRATION to "小电视粉（插画）",
+                        blbl.cat3399.core.prefs.AppPrefs.THEME_PRESET_TV_PINK_ILLUSTRATION to "经典",
                     )
                 showChoiceDialog(
                     title = "主题",

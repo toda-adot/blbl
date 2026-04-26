@@ -17,7 +17,7 @@
         android:padding="@dimen/sidebar_settings_padding"
         android:scaleType="fitCenter"
         android:src="@drawable/ic_back"
-        app:tint="?android:attr/textColorSecondary"
+        app:tint="?attr/blblOnPageBackdropSecondary"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
@@ -32,7 +32,7 @@
         android:includeFontPadding="false"
         android:maxLines="1"
         android:text="我的关注"
-        android:textColor="?attr/colorOnSurface"
+        android:textColor="?attr/blblOnPageBackdrop"
         android:textSize="18sp"
         app:layout_constraintBottom_toBottomOf="@id/btn_back"
         app:layout_constraintEnd_toEndOf="parent"
@@ -78,7 +78,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="关注列表需要登录"
-            android:textColor="?attr/colorOnSurface"
+            android:textColor="?attr/blblOnPageBackdrop"
             android:textSize="18sp" />
 
         <com.google.android.material.button.MaterialButton

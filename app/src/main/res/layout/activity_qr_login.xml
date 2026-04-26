@@ -71,7 +71,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="二维码登录"
-            android:textColor="?attr/colorOnSurface"
+            android:textColor="?attr/blblOnPageBackdrop"
             android:textSize="22sp" />
 
         <TextView
@@ -79,7 +79,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:textColor="?android:attr/textColorSecondary"
+            android:textColor="?attr/blblOnPageBackdropSecondary"
             android:textSize="16sp" />
 
         <com.google.android.material.button.MaterialButton
@@ -104,7 +104,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:alpha="0.55"
-        android:textColor="?android:attr/textColorSecondary"
+        android:textColor="?attr/blblOnPageBackdropSecondary"
         android:textSize="11sp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />

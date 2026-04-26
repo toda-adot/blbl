@@ -15,11 +15,7 @@
         android:focusable="false"
         app:layout_constraintEnd_toStartOf="@id/tv_clock"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:tabBackground="?attr/blblFocusBgRound"
-        app:tabIndicatorColor="?attr/blblAccent"
-        app:tabSelectedTextColor="?attr/colorOnSurface"
-        app:tabTextColor="?android:attr/textColorSecondary" />
+        app:layout_constraintTop_toTopOf="parent" />
 
     <TextClock
         android:id="@+id/tv_clock"
@@ -30,7 +26,7 @@
         android:format24Hour="HH:mm"
         android:gravity="center_vertical"
         android:includeFontPadding="false"
-        android:textColor="?attr/colorOnSurface"
+        android:textColor="?attr/blblOnPageBackdrop"
         android:textSize="22sp"
         android:textStyle="bold"
         app:layout_constraintBottom_toBottomOf="@id/tab_layout"

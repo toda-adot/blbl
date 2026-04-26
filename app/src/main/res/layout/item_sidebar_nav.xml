@@ -36,7 +36,7 @@
             android:layout_marginTop="@dimen/sidebar_nav_label_margin_top"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textColor="?attr/colorOnSurface"
+            android:textColor="?attr/blblOnPageBackdrop"
             android:textSize="@dimen/sidebar_nav_label_text_size"
             android:visibility="gone" />
     </LinearLayout>
